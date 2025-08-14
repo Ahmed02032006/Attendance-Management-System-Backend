@@ -1,0 +1,5 @@
+GET : http://localhost:5000/api/v1/superAdmin/school/all
+GET ( BY ID ) : http://localhost:5000/api/v1/admin/school/user/685bd1e574b6dff007cf6b5e
+POST : http://localhost:5000/api/v1/admin/school/create/685bd1e574b6dff007cf6b5e
+PUT : http://localhost:5000/api/v1/admin/school/delete/685ea012d6ab56e0731c4691
+DELETE : http://localhost:5000/api/v1/admin/school/update/685ea07bd6ab56e0731c4695
