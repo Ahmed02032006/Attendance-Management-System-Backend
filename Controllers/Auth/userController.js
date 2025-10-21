@@ -98,7 +98,9 @@ const Login = async (req, res) => {
   return res
     .cookie("access_token", token, {
       httpOnly: true,
-      secure: false,
+      secure: true, // must be true for Vercel (HTTPS)
+      sameSite: "none", // allow cross-site cookie
+      path: "/", // ensures cookie is sent to all routes
     })
     .json({
       status: "Success",
@@ -116,7 +118,12 @@ const Login = async (req, res) => {
 };
 
 const logout = async (req, res) => {
-  res.clearCookie("access_token");
+  res.clearCookie("access_token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    path: "/",
+  });
   return res.status(200).json({
     success: true,
     status: "Success",
@@ -147,4 +154,4 @@ const checkAuthMiddleware = async (req, res, next) => {
   }
 };
 
-export { Register, Login, logout, checkAuthMiddleware};
+export { Register, Login, logout, checkAuthMiddleware };
