@@ -3,6 +3,9 @@ import Subject from '../../Models/subjectModel.js';
 import mongoose from 'mongoose';
 
 export const createAttendance = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const {
       studentName,
@@ -15,6 +18,8 @@ export const createAttendance = async (req, res) => {
 
     // Validate required fields
     if (!studentName || !rollNo || !time || !subjectId || !ipAddress) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         success: false,
         message: 'Please provide all required fields: studentName, rollNo, time, subjectId, ipAddress'
@@ -23,6 +28,8 @@ export const createAttendance = async (req, res) => {
 
     // Validate subjectId
     if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         success: false,
         message: 'Invalid subject ID'
@@ -30,8 +37,10 @@ export const createAttendance = async (req, res) => {
     }
 
     // Check if subject exists
-    const subject = await Subject.findById(subjectId);
+    const subject = await Subject.findById(subjectId).session(session);
     if (!subject) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({
         success: false,
         message: 'Subject not found'
@@ -43,6 +52,8 @@ export const createAttendance = async (req, res) => {
     if (date) {
       attendanceDate = new Date(date);
       if (isNaN(attendanceDate.getTime())) {
+        await session.abortTransaction();
+        session.endSession();
         return res.status(400).json({
           success: false,
           message: 'Invalid date format. Use YYYY-MM-DD format'
@@ -60,6 +71,8 @@ export const createAttendance = async (req, res) => {
       attendanceDate.getDate() === today.getDate();
 
     if (!isSameDate) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         success: false,
         message: 'QR expired — attendance can only be marked for today'
@@ -81,16 +94,18 @@ export const createAttendance = async (req, res) => {
         $gte: startOfDay,
         $lte: endOfDay
       }
-    });
+    }).session(session);
 
     if (existingAttendance) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         success: false,
         message: 'Attendance already marked for this student on this date'
       });
     }
 
-    // ✅ NEW CONDITION 3: Check if same IP address has been used for any attendance on the same day
+    // ✅ CONDITION 3: Check if same IP address has been used for any attendance on the same day
     const existingIPAttendance = await Attendance.findOne({
       ipAddress,
       subjectId,
@@ -98,9 +113,11 @@ export const createAttendance = async (req, res) => {
         $gte: startOfDay,
         $lte: endOfDay
       }
-    });
+    }).session(session);
 
     if (existingIPAttendance) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         success: false,
         message: 'This device has already been used for attendance today'
@@ -114,13 +131,16 @@ export const createAttendance = async (req, res) => {
       time,
       subjectId,
       date: attendanceDate,
-      ipAddress // Make sure to save IP address in the model
+      ipAddress
     });
 
-    const savedAttendance = await attendance.save();
+    const savedAttendance = await attendance.save({ session });
 
     // Populate subject details in response
     await savedAttendance.populate('subjectId', 'subjectTitle subjectName subjectCode');
+
+    await session.commitTransaction();
+    session.endSession();
 
     res.status(201).json({
       success: true,
@@ -128,6 +148,9 @@ export const createAttendance = async (req, res) => {
       data: savedAttendance
     });
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+
     console.error('Error creating attendance:', error);
 
     if (error.name === 'ValidationError') {
@@ -142,7 +165,7 @@ export const createAttendance = async (req, res) => {
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'Duplicate attendance record found'
+        message: 'Attendance already marked for this student'
       });
     }
 

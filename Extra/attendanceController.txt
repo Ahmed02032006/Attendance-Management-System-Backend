@@ -1,0 +1,151 @@
+export const createAttendance = async (req, res) => {
+  try {
+    const {
+      studentName,
+      rollNo,
+      time,
+      subjectId,
+      date,
+      ipAddress
+    } = req.body;
+
+    // Validate required fields
+    if (!studentName || !rollNo || !time || !subjectId || !ipAddress) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields: studentName, rollNo, time, subjectId, ipAddress'
+      });
+    }
+
+    // Validate subjectId
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
+
+    // Check if subject exists
+    const subject = await Subject.findById(subjectId);
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found'
+      });
+    }
+
+    // Handle date - if not provided, use current date
+    let attendanceDate;
+    if (date) {
+      attendanceDate = new Date(date);
+      if (isNaN(attendanceDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Use YYYY-MM-DD format'
+        });
+      }
+    } else {
+      attendanceDate = new Date();
+    }
+
+    // ✅ CONDITION 1: Only allow attendance if date is today
+    const today = new Date();
+    const isSameDate =
+      attendanceDate.getFullYear() === today.getFullYear() &&
+      attendanceDate.getMonth() === today.getMonth() &&
+      attendanceDate.getDate() === today.getDate();
+
+    if (!isSameDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'QR expired — attendance can only be marked for today'
+      });
+    }
+
+    // Normalize date to start of day for comparison
+    const startOfDay = new Date(attendanceDate);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(attendanceDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // ✅ CONDITION 2: Check if attendance record already exists for same student, subject, and date
+    const existingAttendance = await Attendance.findOne({
+      rollNo,
+      subjectId,
+      date: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      }
+    });
+
+    if (existingAttendance) {
+      return res.status(400).json({
+        success: false,
+        message: 'Attendance already marked for this student on this date'
+      });
+    }
+
+    // ✅ NEW CONDITION 3: Check if same IP address has been used for any attendance on the same day
+    const existingIPAttendance = await Attendance.findOne({
+      ipAddress,
+      subjectId,
+      date: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      }
+    });
+
+    if (existingIPAttendance) {
+      return res.status(400).json({
+        success: false,
+        message: 'This device has already been used for attendance today'
+      });
+    }
+
+    // Create new attendance record with IP address
+    const attendance = new Attendance({
+      studentName,
+      rollNo,
+      time,
+      subjectId,
+      date: attendanceDate,
+      ipAddress // Make sure to save IP address in the model
+    });
+
+    const savedAttendance = await attendance.save();
+
+    // Populate subject details in response
+    await savedAttendance.populate('subjectId', 'subjectTitle subjectName subjectCode');
+
+    res.status(201).json({
+      success: true,
+      message: 'Attendance recorded successfully',
+      data: savedAttendance
+    });
+  } catch (error) {
+    console.error('Error creating attendance:', error);
+
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: errors
+      });
+    }
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Duplicate attendance record found'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Error creating attendance record',
+      error: error.message
+    });
+  }
+};

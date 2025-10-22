@@ -33,5 +33,19 @@ const attendanceSchema = mongoose.Schema({
     }
 }, { timestamps: true });
 
+// Add unique compound index to prevent duplicates
+attendanceSchema.index(
+  { rollNo: 1, subjectId: 1, date: 1 }, 
+  { 
+    unique: true, 
+    name: "unique_attendance_per_day",
+    partialFilterExpression: { 
+      rollNo: { $exists: true }, 
+      subjectId: { $exists: true }, 
+      date: { $exists: true } 
+    }
+  }
+);
+
 const Attendance = mongoose.model("Attendance", attendanceSchema);
 export default Attendance;
