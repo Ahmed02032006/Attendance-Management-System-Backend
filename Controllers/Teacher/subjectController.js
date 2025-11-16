@@ -110,9 +110,9 @@ export const updateSubject = async (req, res) => {
 
     // Check if subject code is being changed and if it already exists
     if (subjectCode && subjectCode !== existingSubject.subjectCode) {
-      const subjectWithSameCode = await Subject.findOne({ 
-        subjectCode, 
-        _id: { $ne: id } 
+      const subjectWithSameCode = await Subject.findOne({
+        subjectCode,
+        _id: { $ne: id }
       });
       if (subjectWithSameCode) {
         return res.status(400).json({
@@ -180,6 +180,50 @@ export const deleteSubject = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error deleting subject',
+      error: error.message
+    });
+  }
+};
+
+export const resetSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate subject ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
+
+    // Check if subject exists
+    const subject = await Subject.findById(id);
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found'
+      });
+    }
+
+    // Delete all attendance records for this subject
+    const deleteResult = await Attendance.deleteMany({ subjectId: id });
+
+    res.status(200).json({
+      success: true,
+      message: `Subject attendance records cleared successfully. ${deleteResult.deletedCount} attendance records deleted.`,
+      data: {
+        subjectId: id,
+        subjectTitle: subject.subjectTitle,
+        subjectName: subject.subjectName,
+        deletedAttendanceCount: deleteResult.deletedCount
+      }
+    });
+  } catch (error) {
+    console.error('Error resetting subject attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error resetting subject attendance',
       error: error.message
     });
   }
