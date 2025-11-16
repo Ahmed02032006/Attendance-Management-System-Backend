@@ -164,6 +164,9 @@ export const deleteSubject = async (req, res) => {
 
     const subject = await Subject.findByIdAndDelete(id);
 
+    // Delete all attendance records for this subject
+    await Attendance.deleteMany({ subjectId: id });
+
     if (!subject) {
       return res.status(404).json({
         success: false,
