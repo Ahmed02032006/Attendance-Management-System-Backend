@@ -13,6 +13,6 @@ Router.route("/user/:userId").get(getSubjectsByUser);
 Router.route("/").post(createSubject);
 Router.route("/:id").put(updateSubject);
 Router.route("/:id").delete(deleteSubject);
-Router.route("/:id/reset-attendance").delete(resetSubject);
+Router.route("/reset-attendance/:id").delete(resetSubject);
 
 export default Router;
