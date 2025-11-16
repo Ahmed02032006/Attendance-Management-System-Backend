@@ -209,6 +209,20 @@ export const resetSubject = async (req, res) => {
     // Delete all attendance records for this subject
     const deleteResult = await Attendance.deleteMany({ subjectId: id });
 
+    // Check if any records were deleted
+    if (deleteResult.deletedCount === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No attendance records found for this subject. Nothing to reset.',
+        data: {
+          subjectId: id,
+          subjectTitle: subject.subjectTitle,
+          subjectName: subject.subjectName,
+          deletedAttendanceCount: 0
+        }
+      });
+    }
+
     res.status(200).json({
       success: true,
       message: `Subject attendance records cleared successfully. ${deleteResult.deletedCount} attendance records deleted.`,
