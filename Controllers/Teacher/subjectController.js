@@ -1,4 +1,5 @@
 import Subject from '../../Models/subjectModel.js';
+import Attendance from '../../Models/attendanceModel.js';
 import mongoose from 'mongoose';
 
 export const createSubject = async (req, res) => {
