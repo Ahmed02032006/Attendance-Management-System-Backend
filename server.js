@@ -1,9 +1,11 @@
+// In your main server file (index.js or server.js), add:
 import express from "express";
 import dotenv from "dotenv";
 import connectToDb from "./Config/connectToDb.js";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import fetch from 'node-fetch';
+import fetch from 'node-fetch'; // Install this: npm install node-fetch
+
 // =================================================
 import userRouter from "./Routes/Auth/user-Routes.js";
 // =================================================
@@ -24,7 +26,7 @@ app.use(cookieParser());
 app.use(
   cors({
     origin: process.env.FRONTEND_URL,
-    methods: ["GET", "POST", "DELETE", "PUT"],
+    methods: ["GET", "POST", "DELETE", "PUT", "OPTIONS"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -39,24 +41,24 @@ app.use(
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-app.use("/api/v1/auth", userRouter);
-// =============
-app.use("/api/v1/teacher/subject", teacherSubjectRouter);
-app.use("/api/v1/teacher/attendance", teacherAttendanceRouter);
-app.use("/api/v1/teacher/dashboard", teacherDashbaordRouter);
-// =============
+// ============= AI PROXY ENDPOINT =============
 app.post("/api/v1/ai/query", async (req, res) => {
   try {
-    const { query } = req.body;
+    const { query, userId, context } = req.body;
     
     if (!query || typeof query !== 'string') {
       return res.status(400).json({
         success: false,
-        message: "Query is required and must be a string"
+        response: "Please provide a valid query.",
+        timestamp: new Date().toISOString()
       });
     }
 
-    console.log('Forwarding AI query:', query.substring(0, 100));
+    console.log('AI Query received:', { 
+      userId, 
+      query: query.substring(0, 100),
+      hasContext: !!context 
+    });
     
     // Forward the request to the external AI API
     const aiResponse = await fetch('https://api-api-rosy.vercel.app/api/query', {
@@ -65,13 +67,13 @@ app.post("/api/v1/ai/query", async (req, res) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
-        query: query,
-        context: 'teacher_dashboard_attendance_system' // Optional context
+        query: query
       }),
-      timeout: 10000 // 10 second timeout
+      timeout: 15000 // 15 second timeout
     });
     
     if (!aiResponse.ok) {
+      console.error('AI service error:', aiResponse.status, aiResponse.statusText);
       throw new Error(`AI service responded with status: ${aiResponse.status}`);
     }
     
@@ -80,7 +82,7 @@ app.post("/api/v1/ai/query", async (req, res) => {
     // Format the response for your frontend
     res.json({
       success: true,
-      response: data.response || data.message || "I received your query but got an empty response.",
+      response: data.response || data.message || "I received your query successfully.",
       timestamp: new Date().toISOString()
     });
     
@@ -88,26 +90,32 @@ app.post("/api/v1/ai/query", async (req, res) => {
     console.error('AI Proxy Error:', error.message);
     
     // Provide helpful fallback responses
-    let fallbackResponse = "I'm experiencing technical difficulties. ";
+    let fallbackResponse = "I'm currently experiencing technical difficulties. ";
     
-    const lowerQuery = req.body.query?.toLowerCase() || '';
-    if (lowerQuery.includes('attendance')) {
-      fallbackResponse += "For attendance-related queries, you can navigate to the Attendance section from the main menu.";
-    } else if (lowerQuery.includes('dashboard')) {
-      fallbackResponse += "The dashboard shows your subjects and attendance records. Select a subject to view details.";
+    const query = req.body.query?.toLowerCase() || '';
+    if (query.includes('attendance') && query.includes('add')) {
+      fallbackResponse += "To add attendance, go to the Attendance page from the main menu, select a subject, and mark students.";
+    } else if (query.includes('dashboard')) {
+      fallbackResponse += "Your dashboard shows your subjects and their attendance records. Select a subject to view details.";
+    } else if (query.includes('subject')) {
+      fallbackResponse += "Your subjects are listed on the left side of the dashboard. Click on any to view attendance.";
     } else {
-      fallbackResponse += "Please try again later or contact support.";
+      fallbackResponse += "Please try again in a moment or contact support.";
     }
     
     res.status(200).json({
       success: false,
       response: fallbackResponse,
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
       timestamp: new Date().toISOString()
     });
   }
 });
-// =============
+
+// ============= EXISTING ROUTES =============
+app.use("/api/v1/auth", userRouter);
+app.use("/api/v1/teacher/subject", teacherSubjectRouter);
+app.use("/api/v1/teacher/attendance", teacherAttendanceRouter);
+app.use("/api/v1/teacher/dashboard", teacherDashbaordRouter);
 
 // Health check route
 app.get("/", (req, res) => {
