@@ -61,7 +61,8 @@ app.post("/api/v1/ai/query", async (req, res) => {
     });
     
     // Forward the request to the external AI API
-    const aiResponse = await fetch('https://api-api-rosy.vercel.app/api/query', {
+    // const aiResponse = await fetch('https://api-api-rosy.vercel.app/api/query', {
+    const aiResponse = await fetch('https://attendance-management-system-ai-q3xh96xvj.vercel.app/api/query', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
