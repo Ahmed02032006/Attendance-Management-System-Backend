@@ -229,6 +229,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
         return {
           id: subject._id.toString(),
           name: subject.subjectName,
+          status: subject.status,
           attendance: attendanceByDate
         };
       })
