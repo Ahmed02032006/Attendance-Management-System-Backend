@@ -12,6 +12,8 @@ import userRouter from "./Routes/Auth/user-Routes.js";
 import teacherSubjectRouter from "./Routes/Teacher/subject-Routes.js";
 import teacherAttendanceRouter from "./Routes/Teacher/attendance-Routes.js";
 import teacherDashbaordRouter from "./Routes/Teacher/dashboard-Routes.js";
+// =================================================
+import adminDashboardRouter from "./Routes/Admin/teachers-Routes.js";
 
 dotenv.config();
 const port = process.env.PORT || 5001;
@@ -117,6 +119,7 @@ app.use("/api/v1/auth", userRouter);
 app.use("/api/v1/teacher/subject", teacherSubjectRouter);
 app.use("/api/v1/teacher/attendance", teacherAttendanceRouter);
 app.use("/api/v1/teacher/dashboard", teacherDashbaordRouter);
+app.use("/api/v1/admin/teachers", adminDashboardRouter);
 
 // Health check route
 app.get("/", (req, res) => {
