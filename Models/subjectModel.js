@@ -16,7 +16,7 @@ const subjectSchema = mongoose.Schema({
         required: [true, "Please enter subject code"],
         unique: true,
         trim: true,
-        uppercase: true
+        // uppercase: true
     },
     status: {
         type: String,
