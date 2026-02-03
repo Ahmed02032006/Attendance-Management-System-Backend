@@ -189,14 +189,16 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
       });
     }
 
-    // Get all subjects for this user
-    const subjects = await Subject.find({ userId })
-      .sort({ createdAt: -1 });
+    // Get only ACTIVE subjects for this user
+    const subjects = await Subject.find({ 
+      userId,
+      status: 'Active'  // Only fetch Active subjects
+    }).sort({ createdAt: -1 });
 
     if (!subjects || subjects.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'No subjects found for this user'
+        message: 'No active subjects found for this user'
       });
     }
 
@@ -237,7 +239,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Subjects with attendance data fetched successfully',
+      message: 'Active subjects with attendance data fetched successfully',
       data: subjectsWithAttendance,
     });
   } catch (error) {
