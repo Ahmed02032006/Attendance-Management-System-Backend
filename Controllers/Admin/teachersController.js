@@ -61,49 +61,28 @@ export const createUser = async (req, res) => {
 // Get All Users
 export const getAllUsers = async (req, res) => {
   try {
-    // Get all users with subject count using aggregation
-    const usersWithSubjectCount = await User.aggregate([
-      {
-        $project: {
-          userName: 1,
-          userEmail: 1,
-          userRole: 1,
-          profilePicture: 1,
-          status: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          // Exclude password
+    // Get all users without any filters or queries
+    const users = await User.find()
+      .select('-userPassword') // This will exclude password from the result
+      .sort({ createdAt: -1 });
+
+    // For each user, count subjects if they are teachers
+    const usersWithSubjectCount = await Promise.all(
+      users.map(async (user) => {
+        // Convert user to plain object (password is already excluded by .select())
+        const userObject = user.toObject();
+        
+        // Only count subjects for teachers
+        if (user.userRole === 'Teacher') {
+          const subjectCount = await Subject.countDocuments({ userId: user._id });
+          userObject.subjectCount = subjectCount;
+        } else {
+          userObject.subjectCount = 0;
         }
-      },
-      {
-        $sort: { createdAt: -1 }
-      },
-      {
-        $lookup: {
-          from: 'subjects',
-          let: { userId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ['$userId', '$$userId'] }
-              }
-            }
-          ],
-          as: 'subjects'
-        }
-      },
-      {
-        $addFields: {
-          // Add subject count for all users (will be 0 for non-teachers)
-          subjectCount: { $size: '$subjects' }
-        }
-      },
-      {
-        $project: {
-          subjects: 0 // Remove the subjects array from final result
-        }
-      }
-    ]);
+        
+        return userObject;
+      })
+    );
 
     res.status(200).json({
       success: true,
