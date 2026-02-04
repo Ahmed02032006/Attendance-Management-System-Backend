@@ -1,4 +1,5 @@
 import User from '../../Models/userModel.js';
+import Subject from '../../Models/subjectModel.js';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
@@ -61,49 +62,34 @@ export const createUser = async (req, res) => {
 // Get All Users
 export const getAllUsers = async (req, res) => {
   try {
-    const { role, status, search, page = 1, limit = 10 } = req.query;
-    
-    // Build filter object
-    const filter = {};
-    
-    if (role) {
-      filter.userRole = role;
-    }
-    
-    if (status) {
-      filter.status = status;
-    }
-    
-    if (search) {
-      filter.$or = [
-        { userName: { $regex: search, $options: 'i' } },
-        { userEmail: { $regex: search, $options: 'i' } }
-      ];
-    }
-    
-    // Pagination
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
-    const skip = (pageNum - 1) * limitNum;
-    
-    // Get total count for pagination
-    const totalUsers = await User.countDocuments(filter);
-    
-    // Get users with pagination
-    const users = await User.find(filter)
+    // Get all users without any filters or queries
+    const users = await User.find()
       .select('-userPassword') // Exclude password from response
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum);
-    
+      .sort({ createdAt: -1 });
+
+    // For each user, count subjects if they are teachers
+    const usersWithSubjectCount = await Promise.all(
+      users.map(async (user) => {
+        // Convert user to plain object
+        const userObject = user.toObject();
+        
+        // Only count subjects for teachers
+        if (user.userRole === 'Teacher') {
+          const subjectCount = await Subject.countDocuments({ userId: user._id });
+          userObject.subjectCount = subjectCount;
+        } else {
+          userObject.subjectCount = 0;
+        }
+        
+        return userObject;
+      })
+    );
+
     res.status(200).json({
       success: true,
       message: 'Users fetched successfully',
-      count: users.length,
-      total: totalUsers,
-      totalPages: Math.ceil(totalUsers / limitNum),
-      currentPage: pageNum,
-      data: users
+      count: usersWithSubjectCount.length,
+      data: usersWithSubjectCount
     });
   } catch (error) {
     console.error('Error fetching users:', error);
