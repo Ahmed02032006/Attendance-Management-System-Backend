@@ -1,4 +1,5 @@
 import User from '../../Models/userModel.js';
+import Subject from '../../Models/subjectModel.js';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
