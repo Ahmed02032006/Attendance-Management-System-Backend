@@ -64,6 +64,7 @@ export const getAllUsers = async (req, res) => {
   try {
     // Get all users without any filters or queries
     const users = await User.find()
+      .select('-userPassword') // Exclude password from response
       .sort({ createdAt: -1 });
 
     // For each user, count subjects if they are teachers
@@ -71,9 +72,6 @@ export const getAllUsers = async (req, res) => {
       users.map(async (user) => {
         // Convert user to plain object
         const userObject = user.toObject();
-        
-        // Explicitly remove password field
-        delete userObject.userPassword;
         
         // Only count subjects for teachers
         if (user.userRole === 'Teacher') {
