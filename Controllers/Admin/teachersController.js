@@ -1,5 +1,4 @@
 import User from '../../Models/userModel.js';
-import Subject from '../../Models/subjectModel.js';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 
@@ -62,32 +61,49 @@ export const createUser = async (req, res) => {
 // Get All Users
 export const getAllUsers = async (req, res) => {
   try {
-    // Get all users without any filters or queries
-    const users = await User.find()
-      .select('+userPassword') // Include password in response (if it's excluded by default)
-      .sort({ createdAt: -1 });
-
-    // For each user, count subjects if they are teachers
-    const usersWithSubjectCount = await Promise.all(
-      users.map(async (user) => {
-        // Convert user to plain object
-        const userObject = user.toObject();
-        
-        // Only count subjects for teachers
-        if (user.userRole === 'Teacher') {
-          const subjectCount = await Subject.countDocuments({ userId: user._id });
-          userObject.subjectCount = subjectCount;
-        } else {
-          userObject.subjectCount = 0;
+    // Get all users with subject count using aggregation
+    const usersWithSubjectCount = await User.aggregate([
+      {
+        $project: {
+          userName: 1,
+          userEmail: 1,
+          userRole: 1,
+          profilePicture: 1,
+          status: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          // Exclude password
         }
-        
-        // Show password as is (hashed/encoded)
-        // Note: If password is hashed with bcrypt, you cannot decode it
-        userObject.hashedPassword = userObject.userPassword;
-        
-        return userObject;
-      })
-    );
+      },
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $lookup: {
+          from: 'subjects',
+          let: { userId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$userId', '$$userId'] }
+              }
+            }
+          ],
+          as: 'subjects'
+        }
+      },
+      {
+        $addFields: {
+          // Add subject count for all users (will be 0 for non-teachers)
+          subjectCount: { $size: '$subjects' }
+        }
+      },
+      {
+        $project: {
+          subjects: 0 // Remove the subjects array from final result
+        }
+      }
+    ]);
 
     res.status(200).json({
       success: true,
