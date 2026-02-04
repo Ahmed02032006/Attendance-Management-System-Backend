@@ -114,6 +114,14 @@ export const updateUser = async (req, res) => {
       status
     } = req.body;
 
+    // Prevent subjectCount from being updated via API
+    if (req.body.subjectCount !== undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Subject count cannot be modified directly'
+      });
+    }
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -166,10 +174,20 @@ export const updateUser = async (req, res) => {
       { new: true, runValidators: true }
     ).select('-userPassword');
 
+    // Convert to plain object and add subjectCount if user is a teacher
+    const userResponse = updatedUser.toObject();
+    
+    if (updatedUser.userRole === 'Teacher') {
+      const subjectCount = await Subject.countDocuments({ userId: updatedUser._id });
+      userResponse.subjectCount = subjectCount;
+    } else {
+      userResponse.subjectCount = 0;
+    }
+
     res.status(200).json({
       success: true,
       message: 'User updated successfully',
-      data: updatedUser
+      data: userResponse
     });
   } catch (error) {
     console.error('Error updating user:', error);
