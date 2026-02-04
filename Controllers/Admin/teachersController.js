@@ -64,10 +64,10 @@ export const getAllUsers = async (req, res) => {
   try {
     // Get all users without any filters or queries
     const users = await User.find()
-      .select('userPassword') // Include password in response
+      .select('+userPassword') // Include password in response (if it's excluded by default)
       .sort({ createdAt: -1 });
 
-    // For each user, count subjects if they are teachers and decode password
+    // For each user, count subjects if they are teachers
     const usersWithSubjectCount = await Promise.all(
       users.map(async (user) => {
         // Convert user to plain object
@@ -81,17 +81,9 @@ export const getAllUsers = async (req, res) => {
           userObject.subjectCount = 0;
         }
         
-        // Decode password (assuming it's base64 encoded)
-        if (userObject.userPassword) {
-          try {
-            // Decode from base64
-            userObject.decodedPassword = Buffer.from(userObject.userPassword, 'base64').toString('utf8');
-          } catch (error) {
-            // If decoding fails, show the encoded password
-            userObject.decodedPassword = 'Unable to decode password';
-            console.error('Error decoding password for user:', user.userEmail, error);
-          }
-        }
+        // Show password as is (hashed/encoded)
+        // Note: If password is hashed with bcrypt, you cannot decode it
+        userObject.hashedPassword = userObject.userPassword;
         
         return userObject;
       })
