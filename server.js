@@ -12,6 +12,7 @@ import userRouter from "./Routes/Auth/user-Routes.js";
 import teacherSubjectRouter from "./Routes/Teacher/subject-Routes.js";
 import teacherAttendanceRouter from "./Routes/Teacher/attendance-Routes.js";
 import teacherDashbaordRouter from "./Routes/Teacher/dashboard-Routes.js";
+import teacherUserRouter from "./Routes/Teacher/user-Routes.js";
 // =================================================
 import adminDashboardRouter from "./Routes/Admin/teachers-Routes.js";
 
@@ -63,7 +64,6 @@ app.post("/api/v1/ai/query", async (req, res) => {
     });
     
     // Forward the request to the external AI API
-    // const aiResponse = await fetch('https://api-api-rosy.vercel.app/api/query', {
     const aiResponse = await fetch('https://attendance-management-system-ai-cyo6oanbk.vercel.app/api/query', {
       method: 'POST',
       headers: {
@@ -114,11 +114,14 @@ app.post("/api/v1/ai/query", async (req, res) => {
   }
 });
 
-// ============= EXISTING ROUTES =============
+// ============= AUTH ROUTES =============
 app.use("/api/v1/auth", userRouter);
+// ============= TEACHERS ROUTES =============
 app.use("/api/v1/teacher/subject", teacherSubjectRouter);
 app.use("/api/v1/teacher/attendance", teacherAttendanceRouter);
 app.use("/api/v1/teacher/dashboard", teacherDashbaordRouter);
+app.use("/api/v1/teacher/user", teacherUserRouter);
+// ============= ADMIN ROUTES =============
 app.use("/api/v1/admin/teachers", adminDashboardRouter);
 
 // Health check route
