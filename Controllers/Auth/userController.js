@@ -6,7 +6,7 @@ import User from "../../Models/userModel.js";
 dotenv.config();
 
 const Register = async (req, res) => {
-  const { userName, userEmail, userPassword, userRole, profilePicture } = req.body;
+  const { userName, userEmail, userPassword, userRole, profilePicture, lastLogin } = req.body;
 
   if (!userName || !userEmail || !userPassword) {
     return res
