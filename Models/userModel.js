@@ -23,6 +23,10 @@ const userSchema = mongoose.Schema({
         type: String,
         required: [false, "Please enter your profile picture"],
     },
+    lastLogin: {
+        type: String,
+        required: [false, "Please enter your last login"],
+    },
     status: {
         type: String,
         default: "Active",

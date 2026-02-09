@@ -37,6 +37,7 @@ const Register = async (req, res) => {
     userPassword: hashedPassword,
     userRole,
     profilePicture,
+    lastLogin,
     status: "Inactive",
   });
 
