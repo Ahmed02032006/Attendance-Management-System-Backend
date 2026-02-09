@@ -95,7 +95,7 @@ export const updateUserLastLoginById = async (req, res) => {
         const updatedUser = await User.findByIdAndUpdate(
             userId,
             {
-                lastLogin: new Date() // This will update to current timestamp
+                lastLogin: Date.now() // This will update to current timestamp
             },
             {
                 new: true, // Return the updated document
