@@ -11,6 +11,7 @@ export const createUser = async (req, res) => {
       userEmail,
       userPassword,
       userRole,
+      lastLogin,
       profilePicture,
       status
     } = req.body;
@@ -34,6 +35,7 @@ export const createUser = async (req, res) => {
       userEmail,
       userPassword: hashedPassword,
       userRole: userRole || 'Admin',
+      lastLogin: lastLogin,
       profilePicture: profilePicture || '',
       status: status || 'Active'
     });
@@ -72,7 +74,7 @@ export const getAllUsers = async (req, res) => {
       users.map(async (user) => {
         // Convert user to plain object
         const userObject = user.toObject();
-        
+
         // Only count subjects for teachers
         if (user.userRole === 'Teacher') {
           const subjectCount = await Subject.countDocuments({ userId: user._id });
@@ -80,7 +82,7 @@ export const getAllUsers = async (req, res) => {
         } else {
           userObject.subjectCount = 0;
         }
-        
+
         return userObject;
       })
     );
@@ -176,7 +178,7 @@ export const updateUser = async (req, res) => {
 
     // Convert to plain object and add subjectCount if user is a teacher
     const userResponse = updatedUser.toObject();
-    
+
     if (updatedUser.userRole === 'Teacher') {
       const subjectCount = await Subject.countDocuments({ userId: updatedUser._id });
       userResponse.subjectCount = subjectCount;
