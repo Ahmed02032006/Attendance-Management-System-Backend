@@ -24,9 +24,9 @@ const userSchema = mongoose.Schema({
         required: [false, "Please enter your profile picture"],
     },
     lastLogin: {
-        type: String,
-        required: [false, "Please enter your last login"],
-    },
+        type: Date,
+        default: Date.now
+    },      
     status: {
         type: String,
         default: "Active",
