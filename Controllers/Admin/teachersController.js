@@ -34,17 +34,25 @@ export const createUser = async (req, res) => {
       userName,
       userEmail,
       userPassword: hashedPassword,
-      userRole: userRole || 'Admin',
-      lastLogin: lastLogin,
+      userRole: userRole || 'Teacher', // Changed default to Teacher
+      lastLogin: lastLogin || Date.now(),
       profilePicture: profilePicture || '',
       status: status || 'Active'
     });
 
     const savedUser = await user.save();
 
-    // Remove password from response
+    // Remove password from response and add subjectCount
     const userResponse = savedUser.toObject();
     delete userResponse.userPassword;
+
+    // Initialize subjectCount based on role
+    if (savedUser.userRole === 'Teacher') {
+      const subjectCount = await Subject.countDocuments({ userId: savedUser._id });
+      userResponse.subjectCount = subjectCount; // This will be 0 for new teachers
+    } else {
+      userResponse.subjectCount = 0;
+    }
 
     res.status(201).json({
       success: true,
