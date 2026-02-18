@@ -235,6 +235,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
           creditHours: subject.creditHours,        // New field
           session: subject.session,                // New field
           semester: subject.semester,
+          createdAt: subject.createdAt,
           status: subject.status,
           attendance: attendanceByDate
         };
