@@ -49,6 +49,7 @@ export const getSubjectsByUser = async (req, res) => {
         return {
           id: subject._id.toString(),
           departmentOffering: subject.departmentOffering,
+          title: subject.subjectTitle,
           code: subject.subjectCode,
           students: studentCount.length,
           color: subjectColors[index % subjectColors.length] // Cycle through colors
