@@ -287,7 +287,7 @@ export const resetSubject = async (req, res) => {
         data: {
           subjectId: id,
           subjectTitle: subject.subjectTitle,
-          subjectName: subject.subjectName,
+          departmentOffering: subject.departmentOffering,
           deletedAttendanceCount: 0
         }
       });
@@ -299,7 +299,7 @@ export const resetSubject = async (req, res) => {
       data: {
         subjectId: id,
         subjectTitle: subject.subjectTitle,
-        subjectName: subject.subjectName,
+        departmentOffering: subject.departmentOffering,
         deletedAttendanceCount: deleteResult.deletedCount
       }
     });

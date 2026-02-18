@@ -137,7 +137,7 @@ export const createAttendance = async (req, res) => {
     const savedAttendance = await attendance.save({ session });
 
     // Populate subject details in response
-    await savedAttendance.populate('subjectId', 'subjectTitle subjectName subjectCode');
+    await savedAttendance.populate('subjectId', 'subjectTitle departmentOffering subjectCode');
 
     await session.commitTransaction();
     session.endSession();
@@ -309,7 +309,7 @@ export const updateAttendance = async (req, res) => {
         date: date ? new Date(date) : existingAttendance.date
       },
       { new: true, runValidators: true }
-    ).populate('subjectId', 'subjectTitle subjectName subjectCode');
+    ).populate('subjectId', 'subjectTitle departmentOffering subjectCode');
 
     res.status(200).json({
       success: true,
