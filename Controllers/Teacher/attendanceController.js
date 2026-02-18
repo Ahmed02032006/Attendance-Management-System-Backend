@@ -223,7 +223,8 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
             id: record._id,
             studentName: record.studentName,
             rollNo: record.rollNo,
-            time: record.time
+            time: record.time,
+            title: subject.subjectTitle,
           });
         });
 
