@@ -116,6 +116,7 @@ export const getSubjectsByUser = async (req, res) => {
           semester: subject.semester,
           students: studentCount.length,
           status: subject.status,
+          createdAt: subject.createdDate,
           color: subjectColors[index % subjectColors.length]
         };
       })
