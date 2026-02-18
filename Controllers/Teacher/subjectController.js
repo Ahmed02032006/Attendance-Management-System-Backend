@@ -6,12 +6,22 @@ export const createSubject = async (req, res) => {
   try {
     const {
       subjectTitle,
-      subjectName,
+      departmentOffering,  // Changed from subjectName
       subjectCode,
+      creditHours,         // New field
+      session,            // New field
       status,
       semester,
       userId
     } = req.body;
+
+    // Validate credit hours
+    if (creditHours && (creditHours < 1 || creditHours > 6)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Credit hours must be between 1 and 6'
+      });
+    }
 
     // Check if subject code already exists
     const existingSubject = await Subject.findOne({ subjectCode });
@@ -25,8 +35,10 @@ export const createSubject = async (req, res) => {
     // Create new subject
     const subject = new Subject({
       subjectTitle,
-      subjectName,
+      departmentOffering,  // Changed from subjectName
       subjectCode,
+      creditHours,         // New field
+      session,            // New field
       status: status || 'Active',
       semester,
       userId,
@@ -62,15 +74,44 @@ export const getSubjectsByUser = async (req, res) => {
       });
     }
 
+    // Get subjects for the user
     const subjects = await Subject.find({ userId })
-      .sort({ createdAt: -1 }) // Sort by latest first
-      .populate('userId', 'userName userEmail'); // Populate user details if needed
+      .sort({ createdAt: -1 });
+
+    if (!subjects || subjects.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No subjects found for this user'
+      });
+    }
+
+    // Format subjects with new fields
+    const formattedSubjects = await Promise.all(
+      subjects.map(async (subject, index) => {
+        // Get unique student count for this subject
+        const studentCount = await Attendance.distinct('rollNo', {
+          subjectId: subject._id
+        });
+
+        return {
+          id: subject._id.toString(),
+          title: subject.subjectTitle,
+          department: subject.departmentOffering,  // Changed from subjectName
+          code: subject.subjectCode,
+          creditHours: subject.creditHours,        // New field
+          session: subject.session,                // New field
+          semester: subject.semester,
+          students: studentCount.length,
+          status: subject.status,
+          color: subjectColors[index % subjectColors.length]
+        };
+      })
+    );
 
     res.status(200).json({
       success: true,
       message: 'Subjects fetched successfully',
-      count: subjects.length,
-      data: subjects
+      data: formattedSubjects,
     });
   } catch (error) {
     console.error('Error fetching subjects:', error);
@@ -87,8 +128,10 @@ export const updateSubject = async (req, res) => {
     const { id } = req.params;
     const {
       subjectTitle,
-      subjectName,
+      departmentOffering,  // Changed from subjectName
       subjectCode,
+      creditHours,         // New field
+      session,            // New field
       status,
       semester
     } = req.body;
@@ -97,6 +140,14 @@ export const updateSubject = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Invalid subject ID'
+      });
+    }
+
+    // Validate credit hours if provided
+    if (creditHours && (creditHours < 1 || creditHours > 6)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Credit hours must be between 1 and 6'
       });
     }
 
@@ -128,8 +179,10 @@ export const updateSubject = async (req, res) => {
       id,
       {
         subjectTitle,
-        subjectName,
+        departmentOffering,  // Changed from subjectName
         subjectCode,
+        creditHours,         // New field
+        session,            // New field
         status,
         semester
       },

@@ -190,7 +190,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
     }
 
     // Get only ACTIVE subjects for this user
-    const subjects = await Subject.find({ 
+    const subjects = await Subject.find({
       userId,
       status: 'Active'  // Only fetch Active subjects
     }).sort({ createdAt: -1 });
@@ -202,7 +202,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
       });
     }
 
-    // Get attendance data for all subjects and format like dummy object
+    // Get attendance data for all subjects
     const subjectsWithAttendance = await Promise.all(
       subjects.map(async (subject) => {
         // Get all attendance records for this subject
@@ -211,26 +211,30 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
 
         // Group attendance by date (format: YYYY-MM-DD)
         const attendanceByDate = {};
-        
+
         attendanceRecords.forEach(record => {
-          const dateKey = record.date.toISOString().split('T')[0]; // Format as YYYY-MM-DD
-          
+          const dateKey = record.date.toISOString().split('T')[0];
+
           if (!attendanceByDate[dateKey]) {
             attendanceByDate[dateKey] = [];
           }
-          
+
           attendanceByDate[dateKey].push({
             id: record._id,
             studentName: record.studentName,
             rollNo: record.rollNo,
-            time: record.time,
-            subject: subject.subjectName
+            time: record.time
           });
         });
 
         return {
           id: subject._id.toString(),
-          name: subject.subjectName,
+          title: subject.subjectTitle,
+          department: subject.departmentOffering,  // Changed from subjectName
+          code: subject.subjectCode,
+          creditHours: subject.creditHours,        // New field
+          session: subject.session,                // New field
+          semester: subject.semester,
           status: subject.status,
           attendance: attendanceByDate
         };
