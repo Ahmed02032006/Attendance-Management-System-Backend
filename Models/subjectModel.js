@@ -6,7 +6,7 @@ const subjectSchema = mongoose.Schema({
         required: [true, "Please enter subject title"],
         trim: true
     },
-    departmentOffering: { 
+    departmentOffering: {
         type: String,
         required: [true, "Please enter department offering the course"],
         trim: true
@@ -19,10 +19,8 @@ const subjectSchema = mongoose.Schema({
         // uppercase: true
     },
     creditHours: {
-        type: Number,
+        type: String,
         required: [true, "Please enter credit hours"],
-        min: [1, "Credit hours must be at least 1"],
-        max: [6, "Credit hours cannot exceed 6"]
     },
     session: {
         type: String,
