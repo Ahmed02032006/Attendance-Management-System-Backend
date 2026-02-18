@@ -230,7 +230,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
         return {
           id: subject._id.toString(),
           title: subject.subjectTitle,
-          department: subject.departmentOffering,  // Changed from subjectName
+          departmentOffering: subject.departmentOffering,  // Changed from subjectName
           code: subject.subjectCode,
           creditHours: subject.creditHours,        // New field
           session: subject.session,                // New field
