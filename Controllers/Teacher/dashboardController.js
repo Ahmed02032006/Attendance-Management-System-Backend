@@ -52,7 +52,7 @@ export const getSubjectsByUser = async (req, res) => {
           title: subject.subjectTitle,
           code: subject.subjectCode,
           students: studentCount.length,
-          createdAt: studentCount.createdDate,
+          createdAt: subject.createdDate,
           color: subjectColors[index % subjectColors.length] // Cycle through colors
         };
       })
