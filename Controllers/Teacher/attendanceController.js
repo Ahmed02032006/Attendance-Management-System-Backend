@@ -10,19 +10,19 @@ export const createAttendance = async (req, res) => {
     const {
       studentName,
       rollNo,
+      discipline,
       time,
       subjectId,
       date,
       ipAddress
     } = req.body;
 
-    // Validate required fields
-    if (!studentName || !rollNo || !time || !subjectId || !ipAddress) {
+    if (!studentName || !rollNo || !discipline || !time || !subjectId || !ipAddress) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields: studentName, rollNo, time, subjectId, ipAddress'
+        message: 'Please provide all required fields: studentName, rollNo, discipline, time, subjectId, ipAddress'
       });
     }
 
@@ -128,6 +128,7 @@ export const createAttendance = async (req, res) => {
     const attendance = new Attendance({
       studentName,
       rollNo,
+      discipline,
       time,
       subjectId,
       date: attendanceDate,
@@ -223,6 +224,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
             id: record._id,
             studentName: record.studentName,
             rollNo: record.rollNo,
+            discipline: record.discipline,  // Add this line
             time: record.time,
             title: subject.subjectTitle,
           });
@@ -231,10 +233,10 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
         return {
           id: subject._id.toString(),
           title: subject.subjectTitle,
-          departmentOffering: subject.departmentOffering,  // Changed from subjectName
+          departmentOffering: subject.departmentOffering,
           code: subject.subjectCode,
-          creditHours: subject.creditHours,        // New field
-          session: subject.session,                // New field
+          creditHours: subject.creditHours,
+          session: subject.session,
           semester: subject.semester,
           createdAt: subject.createdDate,
           status: subject.status,
@@ -264,6 +266,7 @@ export const updateAttendance = async (req, res) => {
     const {
       studentName,
       rollNo,
+      discipline,
       time,
       date
     } = req.body;
@@ -307,6 +310,7 @@ export const updateAttendance = async (req, res) => {
       {
         studentName,
         rollNo,
+        discipline,  // Add this line
         time,
         date: date ? new Date(date) : existingAttendance.date
       },

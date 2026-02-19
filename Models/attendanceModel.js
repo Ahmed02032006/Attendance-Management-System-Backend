@@ -11,6 +11,11 @@ const attendanceSchema = mongoose.Schema({
         required: [true, "Please enter roll number"],
         trim: true,
     },
+    discipline: {
+        type: String,
+        required: [true, "Please select discipline"],
+        trim: true,
+    },
     time: {
         type: String,
         required: [true, "Please enter time"],
@@ -26,25 +31,25 @@ const attendanceSchema = mongoose.Schema({
         default: Date.now,
         required: true
     },
-    ipAddress:{
+    ipAddress: {
         type: String,
         required: true,
         trim: true
     }
 }, { timestamps: true });
 
-// Add unique compound index to prevent duplicates
+// Update unique compound index to include discipline
 attendanceSchema.index(
-  { rollNo: 1, subjectId: 1, date: 1 }, 
-  { 
-    unique: true, 
-    name: "unique_attendance_per_day",
-    partialFilterExpression: { 
-      rollNo: { $exists: true }, 
-      subjectId: { $exists: true }, 
-      date: { $exists: true } 
+    { rollNo: 1, subjectId: 1, date: 1 },
+    {
+        unique: true,
+        name: "unique_attendance_per_day",
+        partialFilterExpression: {
+            rollNo: { $exists: true },
+            subjectId: { $exists: true },
+            date: { $exists: true }
+        }
     }
-  }
 );
 
 const Attendance = mongoose.model("Attendance", attendanceSchema);
