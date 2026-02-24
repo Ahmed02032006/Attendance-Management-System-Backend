@@ -156,9 +156,9 @@ export const getRegisteredStudentsBySubject = async (req, res) => {
     }
 
     // Find the subject and verify it belongs to the teacher
-    const subject = await Subject.findOne({ 
+    const subject = await Subject.findOne({
       _id: subjectId,
-      userId: teacherId 
+      userId: teacherId
     }).select('registeredStudents subjectTitle subjectCode semester session');
 
     if (!subject) {
@@ -221,9 +221,9 @@ export const addRegisteredStudents = async (req, res) => {
     }
 
     // Find the subject and verify it belongs to the teacher
-    const subject = await Subject.findOne({ 
+    const subject = await Subject.findOne({
       _id: subjectId,
-      userId: teacherId 
+      userId: teacherId
     });
 
     if (!subject) {
@@ -244,27 +244,34 @@ export const addRegisteredStudents = async (req, res) => {
     }
 
     // Check for existing registration numbers in the subject
-    const existingRegNos = subject.registeredStudents.map(s => s.registrationNo);
-    const duplicates = students.filter(s => existingRegNos.includes(s.registrationNo));
-    
-    if (duplicates.length > 0) {
+    const existingRegNos = new Set(subject.registeredStudents.map(s => s.registrationNo));
+
+    // Filter out students that already exist
+    const newStudents = students.filter(s => !existingRegNos.has(s.registrationNo));
+    const duplicateStudents = students.filter(s => existingRegNos.has(s.registrationNo));
+
+    if (newStudents.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Some students already exist in this subject',
-        duplicates: duplicates
+        message: 'All students already exist in this subject',
+        duplicates: duplicateStudents
       });
     }
 
-    // Add new students to the registeredStudents array
-    subject.registeredStudents.push(...students);
-    await subject.save();
+    // Add only new students to the registeredStudents array
+    if (newStudents.length > 0) {
+      subject.registeredStudents.push(...newStudents);
+      await subject.save();
+    }
 
     res.status(200).json({
       success: true,
-      message: `${students.length} students added successfully`,
+      message: `${newStudents.length} students added successfully${duplicateStudents.length > 0 ? `. ${duplicateStudents.length} students were skipped as they already exist.` : ''}`,
       data: {
         subjectId: subject._id,
-        addedCount: students.length,
+        addedCount: newStudents.length,
+        skippedCount: duplicateStudents.length,
+        skippedStudents: duplicateStudents,
         totalRegisteredStudents: subject.registeredStudents.length
       }
     });
@@ -292,9 +299,9 @@ export const updateRegisteredStudent = async (req, res) => {
     }
 
     // Find the subject and verify it belongs to the teacher
-    const subject = await Subject.findOne({ 
+    const subject = await Subject.findOne({
       _id: subjectId,
-      userId: teacherId 
+      userId: teacherId
     });
 
     if (!subject) {
@@ -321,7 +328,7 @@ export const updateRegisteredStudent = async (req, res) => {
       const existingStudent = subject.registeredStudents.find(
         s => s.registrationNo === registrationNo && s._id.toString() !== studentId
       );
-      
+
       if (existingStudent) {
         return res.status(400).json({
           success: false,
@@ -365,9 +372,9 @@ export const deleteRegisteredStudent = async (req, res) => {
     }
 
     // Find the subject and verify it belongs to the teacher
-    const subject = await Subject.findOne({ 
+    const subject = await Subject.findOne({
       _id: subjectId,
-      userId: teacherId 
+      userId: teacherId
     });
 
     if (!subject) {
