@@ -15,17 +15,19 @@ const subjectColors = [
   'bg-amber-500'
 ];
 
+// Create new subject
 export const createSubject = async (req, res) => {
   try {
     const {
       subjectTitle,
-      departmentOffering,  // Changed from subjectName
+      departmentOffering,
       subjectCode,
-      creditHours,         // New field
-      session,            // New field
+      creditHours,
+      session,
       status,
       semester,
-      userId
+      userId,
+      registeredStudents // New field
     } = req.body;
 
     // Validate credit hours
@@ -48,14 +50,15 @@ export const createSubject = async (req, res) => {
     // Create new subject
     const subject = new Subject({
       subjectTitle,
-      departmentOffering,  // Changed from subjectName
+      departmentOffering,
       subjectCode,
-      creditHours,         // New field
-      session,            // New field
+      creditHours,
+      session,
       status: status || 'Active',
       semester,
       userId,
-      createdDate: new Date()
+      createdDate: new Date(),
+      registeredStudents: registeredStudents || [] // Initialize with provided students or empty array
     });
 
     const savedSubject = await subject.save();
@@ -75,6 +78,7 @@ export const createSubject = async (req, res) => {
   }
 };
 
+// Get subjects by user
 export const getSubjectsByUser = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -109,12 +113,13 @@ export const getSubjectsByUser = async (req, res) => {
         return {
           id: subject._id.toString(),
           title: subject.subjectTitle,
-          departmentOffering: subject.departmentOffering,  // Changed from subjectName
+          departmentOffering: subject.departmentOffering,
           code: subject.subjectCode,
-          creditHours: subject.creditHours,        // New field
-          session: subject.session,                // New field
+          creditHours: subject.creditHours,
+          session: subject.session,
           semester: subject.semester,
           students: studentCount.length,
+          registeredStudentsCount: subject.registeredStudents?.length || 0, // Count of registered students
           status: subject.status,
           createdAt: subject.createdDate,
           color: subjectColors[index % subjectColors.length]
@@ -137,15 +142,284 @@ export const getSubjectsByUser = async (req, res) => {
   }
 };
 
+// Get registered students by subject ID
+export const getRegisteredStudentsBySubject = async (req, res) => {
+  try {
+    const { subjectId } = req.params;
+    const { teacherId } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
+
+    // Find the subject and verify it belongs to the teacher
+    const subject = await Subject.findOne({ 
+      _id: subjectId,
+      userId: teacherId 
+    }).select('registeredStudents subjectTitle subjectCode semester session');
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found or you do not have permission to view it'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Registered students fetched successfully',
+      data: {
+        subjectId: subject._id,
+        subjectTitle: subject.subjectTitle,
+        subjectCode: subject.subjectCode,
+        semester: subject.semester,
+        session: subject.session,
+        registeredStudents: subject.registeredStudents || []
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching registered students:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching registered students',
+      error: error.message
+    });
+  }
+};
+
+// Add registered students to a subject
+export const addRegisteredStudents = async (req, res) => {
+  try {
+    const { subjectId } = req.params;
+    const { teacherId, students } = req.body; // students should be array of {registrationNo, studentName}
+
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
+
+    if (!students || !Array.isArray(students) || students.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide an array of students'
+      });
+    }
+
+    // Validate each student object
+    for (const student of students) {
+      if (!student.registrationNo || !student.studentName) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each student must have registrationNo and studentName'
+        });
+      }
+    }
+
+    // Find the subject and verify it belongs to the teacher
+    const subject = await Subject.findOne({ 
+      _id: subjectId,
+      userId: teacherId 
+    });
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found or you do not have permission to modify it'
+      });
+    }
+
+    // Check for duplicate registration numbers within the new students
+    const registrationNos = students.map(s => s.registrationNo);
+    const uniqueRegistrationNos = [...new Set(registrationNos)];
+    if (uniqueRegistrationNos.length !== students.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Duplicate registration numbers found in the import list'
+      });
+    }
+
+    // Check for existing registration numbers in the subject
+    const existingRegNos = subject.registeredStudents.map(s => s.registrationNo);
+    const duplicates = students.filter(s => existingRegNos.includes(s.registrationNo));
+    
+    if (duplicates.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Some students already exist in this subject',
+        duplicates: duplicates
+      });
+    }
+
+    // Add new students to the registeredStudents array
+    subject.registeredStudents.push(...students);
+    await subject.save();
+
+    res.status(200).json({
+      success: true,
+      message: `${students.length} students added successfully`,
+      data: {
+        subjectId: subject._id,
+        addedCount: students.length,
+        totalRegisteredStudents: subject.registeredStudents.length
+      }
+    });
+  } catch (error) {
+    console.error('Error adding registered students:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error adding registered students',
+      error: error.message
+    });
+  }
+};
+
+// Update a registered student
+export const updateRegisteredStudent = async (req, res) => {
+  try {
+    const { subjectId, studentId } = req.params;
+    const { teacherId, registrationNo, studentName } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(subjectId) || !mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID or student ID'
+      });
+    }
+
+    // Find the subject and verify it belongs to the teacher
+    const subject = await Subject.findOne({ 
+      _id: subjectId,
+      userId: teacherId 
+    });
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found or you do not have permission to modify it'
+      });
+    }
+
+    // Find the student in the registeredStudents array
+    const studentIndex = subject.registeredStudents.findIndex(
+      s => s._id.toString() === studentId
+    );
+
+    if (studentIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
+
+    // Check if registration number is being changed and if it already exists
+    if (registrationNo && registrationNo !== subject.registeredStudents[studentIndex].registrationNo) {
+      const existingStudent = subject.registeredStudents.find(
+        s => s.registrationNo === registrationNo && s._id.toString() !== studentId
+      );
+      
+      if (existingStudent) {
+        return res.status(400).json({
+          success: false,
+          message: 'Registration number already exists in this subject'
+        });
+      }
+    }
+
+    // Update student details
+    if (registrationNo) subject.registeredStudents[studentIndex].registrationNo = registrationNo;
+    if (studentName) subject.registeredStudents[studentIndex].studentName = studentName;
+
+    await subject.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Student updated successfully',
+      data: subject.registeredStudents[studentIndex]
+    });
+  } catch (error) {
+    console.error('Error updating student:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating student',
+      error: error.message
+    });
+  }
+};
+
+// Delete a registered student
+export const deleteRegisteredStudent = async (req, res) => {
+  try {
+    const { subjectId, studentId } = req.params;
+    const { teacherId } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(subjectId) || !mongoose.Types.ObjectId.isValid(studentId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID or student ID'
+      });
+    }
+
+    // Find the subject and verify it belongs to the teacher
+    const subject = await Subject.findOne({ 
+      _id: subjectId,
+      userId: teacherId 
+    });
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found or you do not have permission to modify it'
+      });
+    }
+
+    // Remove the student from registeredStudents array
+    const initialLength = subject.registeredStudents.length;
+    subject.registeredStudents = subject.registeredStudents.filter(
+      s => s._id.toString() !== studentId
+    );
+
+    if (initialLength === subject.registeredStudents.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
+
+    await subject.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Student deleted successfully',
+      data: {
+        subjectId: subject._id,
+        remainingStudents: subject.registeredStudents.length
+      }
+    });
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting student',
+      error: error.message
+    });
+  }
+};
+
+// Existing functions (keep as they are)
 export const updateSubject = async (req, res) => {
   try {
     const { id } = req.params;
     const {
       subjectTitle,
-      departmentOffering,  // Changed from subjectName
+      departmentOffering,
       subjectCode,
-      creditHours,         // New field
-      session,            // New field
+      creditHours,
+      session,
       status,
       semester
     } = req.body;
@@ -188,20 +462,20 @@ export const updateSubject = async (req, res) => {
       }
     }
 
-    // Update subject
+    // Update subject (excluding registeredStudents)
     const updatedSubject = await Subject.findByIdAndUpdate(
       id,
       {
         subjectTitle,
-        departmentOffering,  // Changed from subjectName
+        departmentOffering,
         subjectCode,
-        creditHours,         // New field
-        session,            // New field
+        creditHours,
+        session,
         status,
         semester
       },
       { new: true, runValidators: true }
-    ).populate('userId', 'userName userEmail');
+    );
 
     res.status(200).json({
       success: true,

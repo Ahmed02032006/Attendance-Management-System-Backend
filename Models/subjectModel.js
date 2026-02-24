@@ -1,5 +1,18 @@
 import mongoose from "mongoose";
 
+const studentSchema = mongoose.Schema({
+    registrationNo: {
+        type: String,
+        required: [true, "Please enter registration number"],
+        trim: true
+    },
+    studentName: {
+        type: String,
+        required: [true, "Please enter student name"],
+        trim: true
+    }
+}, { _id: true });
+
 const subjectSchema = mongoose.Schema({
     subjectTitle: {
         type: String,
@@ -16,7 +29,6 @@ const subjectSchema = mongoose.Schema({
         required: [true, "Please enter subject code"],
         unique: true,
         trim: true,
-        // uppercase: true
     },
     creditHours: {
         type: String,
@@ -46,7 +58,8 @@ const subjectSchema = mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: [true, "Please enter user ID"]
-    }
+    },
+    registeredStudents: [studentSchema] // New field for registered students
 }, { timestamps: true });
 
 const Subject = mongoose.model("Subject", subjectSchema);
