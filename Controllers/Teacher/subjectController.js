@@ -594,3 +594,62 @@ export const resetSubject = async (req, res) => {
     });
   }
 };
+
+export const deleteAllRegisteredStudents = async (req, res) => {
+  try {
+    const { subjectId } = req.params;
+    const { teacherId } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
+
+    // Find the subject and verify it belongs to the teacher
+    const subject = await Subject.findOne({
+      _id: subjectId,
+      userId: teacherId
+    });
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found or you do not have permission to modify it'
+      });
+    }
+
+    // Check if there are any students to delete
+    if (!subject.registeredStudents || subject.registeredStudents.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No registered students found to delete'
+      });
+    }
+
+    // Store count before deletion
+    const deletedCount = subject.registeredStudents.length;
+
+    // Clear the registeredStudents array
+    subject.registeredStudents = [];
+    await subject.save();
+
+    res.status(200).json({
+      success: true,
+      message: `${deletedCount} students deleted successfully`,
+      data: {
+        subjectId: subject._id,
+        deletedCount: deletedCount,
+        remainingStudents: 0
+      }
+    });
+  } catch (error) {
+    console.error('Error deleting all registered students:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting all registered students',
+      error: error.message
+    });
+  }
+};
