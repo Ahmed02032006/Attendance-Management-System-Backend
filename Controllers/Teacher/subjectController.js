@@ -595,6 +595,7 @@ export const resetSubject = async (req, res) => {
   }
 };
 
+// Delete all registered students from a subject
 export const deleteAllRegisteredStudents = async (req, res) => {
   try {
     const { subjectId } = req.params;
