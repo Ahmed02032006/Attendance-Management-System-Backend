@@ -210,24 +210,64 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
         const attendanceRecords = await Attendance.find({ subjectId: subject._id })
           .sort({ date: -1, time: 1 });
 
+        // Get registered students for this subject
+        const registeredStudents = subject.registeredStudents || [];
+
         // Group attendance by date (format: YYYY-MM-DD)
         const attendanceByDate = {};
 
+        // Process each attendance record
         attendanceRecords.forEach(record => {
           const dateKey = record.date.toISOString().split('T')[0];
 
           if (!attendanceByDate[dateKey]) {
-            attendanceByDate[dateKey] = [];
+            // Initialize with all registered students marked as absent
+            attendanceByDate[dateKey] = registeredStudents.map(student => ({
+              id: null, // No attendance ID for absent students
+              studentName: student.studentName,
+              rollNo: student.registrationNo,
+              discipline: record.discipline || subject.departmentOffering,
+              time: null, // No time for absent students
+              title: subject.subjectTitle,
+              status: 'Absent'
+            }));
           }
 
-          attendanceByDate[dateKey].push({
-            id: record._id,
-            studentName: record.studentName,
-            rollNo: record.rollNo,
-            discipline: record.discipline,  // Add this line
-            time: record.time,
-            title: subject.subjectTitle,
-          });
+          // Find and update the present student in the array
+          const studentIndex = attendanceByDate[dateKey].findIndex(
+            s => s.rollNo === record.rollNo
+          );
+
+          if (studentIndex !== -1) {
+            // Student is registered - mark as present
+            attendanceByDate[dateKey][studentIndex] = {
+              id: record._id,
+              studentName: record.studentName,
+              rollNo: record.rollNo,
+              discipline: record.discipline,
+              time: record.time,
+              title: subject.subjectTitle,
+              status: 'Present'
+            };
+          } else {
+            // Student is NOT registered - still show them but mark accordingly
+            attendanceByDate[dateKey].push({
+              id: record._id,
+              studentName: record.studentName,
+              rollNo: record.rollNo,
+              discipline: record.discipline,
+              time: record.time,
+              title: subject.subjectTitle,
+              status: 'Not Registered'
+            });
+          }
+        });
+
+        // Sort students by roll number for each date
+        Object.keys(attendanceByDate).forEach(date => {
+          attendanceByDate[date].sort((a, b) => 
+            a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true })
+          );
         });
 
         return {
@@ -240,6 +280,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
           semester: subject.semester,
           createdAt: subject.createdDate,
           status: subject.status,
+          totalRegisteredStudents: registeredStudents.length,
           attendance: attendanceByDate
         };
       })
