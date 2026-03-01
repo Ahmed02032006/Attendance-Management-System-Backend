@@ -13,6 +13,7 @@ import teacherSubjectRouter from "./Routes/Teacher/subject-Routes.js";
 import teacherAttendanceRouter from "./Routes/Teacher/attendance-Routes.js";
 import teacherDashbaordRouter from "./Routes/Teacher/dashboard-Routes.js";
 import teacherUserRouter from "./Routes/Teacher/user-Routes.js";
+import teacherReportRouter from './Routes/Teacher/report-Routes.js';
 // =================================================
 import adminDashboardRouter from "./Routes/Admin/teachers-Routes.js";
 
@@ -121,6 +122,7 @@ app.use("/api/v1/teacher/subject", teacherSubjectRouter);
 app.use("/api/v1/teacher/attendance", teacherAttendanceRouter);
 app.use("/api/v1/teacher/dashboard", teacherDashbaordRouter);
 app.use("/api/v1/teacher/user", teacherUserRouter);
+app.use("/api/v1/teacher/reports", teacherReportRouter);
 // ============= ADMIN ROUTES =============
 app.use("/api/v1/admin/teachers", adminDashboardRouter);
 
@@ -138,5 +140,3 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`Server is running on port ${port}`);
   });
 }
-
-// Every Thing Perfect

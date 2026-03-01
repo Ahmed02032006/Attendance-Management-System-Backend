@@ -256,6 +256,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
               studentName: record.studentName,
               rollNo: record.rollNo,
               discipline: record.discipline,
+              masla:"Masla hai",
               time: record.time,
               title: subject.subjectTitle,
               status: 'Not Registered'
