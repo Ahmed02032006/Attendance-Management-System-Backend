@@ -6,7 +6,7 @@ import {
 
 const Router = express.Router();
 
-Router.get('/report/:subjectId', getSubjectAttendanceReport);
+Router.get('/:subjectId', getSubjectAttendanceReport);
 Router.get('/:subjectId/export', exportAttendanceReport);
 
 export default Router;
