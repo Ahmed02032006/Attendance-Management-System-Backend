@@ -226,7 +226,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
               id: null, // No attendance ID for absent students
               studentName: student.studentName,
               rollNo: student.registrationNo,
-              discipline: record.discipline || subject.departmentOffering,
+              discipline: null, // No discipline for absent students
               time: null, // No time for absent students
               title: subject.subjectTitle,
               status: 'Absent'
@@ -256,7 +256,6 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
               studentName: record.studentName,
               rollNo: record.rollNo,
               discipline: record.discipline,
-              masla:"Masla hai",
               time: record.time,
               title: subject.subjectTitle,
               status: 'Not Registered'
