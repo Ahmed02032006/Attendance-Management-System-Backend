@@ -27,7 +27,8 @@ export const createSubject = async (req, res) => {
       status,
       semester,
       userId,
-      registeredStudents // New field
+      registeredStudents,
+      classSchedule // New field
     } = req.body;
 
     // Validate credit hours
@@ -38,12 +39,24 @@ export const createSubject = async (req, res) => {
       });
     }
 
+    // Validate class schedule if provided
+    if (classSchedule && classSchedule.length > 0) {
+      for (const schedule of classSchedule) {
+        if (!schedule.day || !schedule.startTime || !schedule.endTime) {
+          return res.status(400).json({
+            success: false,
+            message: 'Each class schedule must have day, start time, and end time'
+          });
+        }
+      }
+    }
+
     // Check if subject code already exists
     const existingSubject = await Subject.findOne({ subjectCode });
     if (existingSubject) {
       return res.status(400).json({
         success: false,
-        message: 'Subject code already exists'
+        message: 'Course code already exists'
       });
     }
 
@@ -58,21 +71,22 @@ export const createSubject = async (req, res) => {
       semester,
       userId,
       createdDate: new Date(),
-      registeredStudents: registeredStudents || [] // Initialize with provided students or empty array
+      registeredStudents: registeredStudents || [],
+      classSchedule: classSchedule || [] // Initialize with provided schedule or empty array
     });
 
     const savedSubject = await subject.save();
 
     res.status(201).json({
       success: true,
-      message: 'Subject created successfully',
+      message: 'Course created successfully',
       data: savedSubject
     });
   } catch (error) {
     console.error('Error creating subject:', error);
     res.status(500).json({
       success: false,
-      message: 'Error creating subject',
+      message: 'Error creating course',
       error: error.message
     });
   }
@@ -98,7 +112,7 @@ export const getSubjectsByUser = async (req, res) => {
     if (!subjects || subjects.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'No subjects found for this user'
+        message: 'No courses found for this user'
       });
     }
 
@@ -119,24 +133,222 @@ export const getSubjectsByUser = async (req, res) => {
           session: subject.session,
           semester: subject.semester,
           students: studentCount.length,
-          registeredStudentsCount: subject.registeredStudents?.length || 0, // Count of registered students
+          registeredStudentsCount: subject.registeredStudents?.length || 0,
           status: subject.status,
           createdAt: subject.createdDate,
-          color: subjectColors[index % subjectColors.length]
+          color: subjectColors[index % subjectColors.length],
+          classSchedule: subject.classSchedule || [] // Include class schedule in response
         };
       })
     );
 
     res.status(200).json({
       success: true,
-      message: 'Subjects fetched successfully',
+      message: 'Courses fetched successfully',
       data: formattedSubjects,
     });
   } catch (error) {
     console.error('Error fetching subjects:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching subjects',
+      message: 'Error fetching courses',
+      error: error.message
+    });
+  }
+};
+
+// Update subject
+export const updateSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      subjectTitle,
+      departmentOffering,
+      subjectCode,
+      creditHours,
+      session,
+      status,
+      semester,
+      classSchedule // New field
+    } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid course ID'
+      });
+    }
+
+    // Validate credit hours if provided
+    if (creditHours && (creditHours < 1 || creditHours > 6)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Credit hours must be between 1 and 6'
+      });
+    }
+
+    // Validate class schedule if provided
+    if (classSchedule && classSchedule.length > 0) {
+      for (const schedule of classSchedule) {
+        if (!schedule.day || !schedule.startTime || !schedule.endTime) {
+          return res.status(400).json({
+            success: false,
+            message: 'Each class schedule must have day, start time, and end time'
+          });
+        }
+      }
+    }
+
+    // Check if subject exists
+    const existingSubject = await Subject.findById(id);
+    if (!existingSubject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found'
+      });
+    }
+
+    // Check if subject code is being changed and if it already exists
+    if (subjectCode && subjectCode !== existingSubject.subjectCode) {
+      const subjectWithSameCode = await Subject.findOne({
+        subjectCode,
+        _id: { $ne: id }
+      });
+      if (subjectWithSameCode) {
+        return res.status(400).json({
+          success: false,
+          message: 'Course code already exists'
+        });
+      }
+    }
+
+    // Update subject
+    const updatedSubject = await Subject.findByIdAndUpdate(
+      id,
+      {
+        subjectTitle,
+        departmentOffering,
+        subjectCode,
+        creditHours,
+        session,
+        status,
+        semester,
+        classSchedule // Update class schedule
+      },
+      { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Course updated successfully',
+      data: updatedSubject
+    });
+  } catch (error) {
+    console.error('Error updating subject:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating course',
+      error: error.message
+    });
+  }
+};
+
+// Delete subject
+export const deleteSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid course ID'
+      });
+    }
+
+    const subject = await Subject.findById(id);
+    
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found'
+      });
+    }
+
+    // Delete the subject
+    await Subject.findByIdAndDelete(id);
+
+    // Delete all attendance records for this subject
+    await Attendance.deleteMany({ subjectId: id });
+
+    res.status(200).json({
+      success: true,
+      message: 'Course deleted successfully',
+      data: { deletedId: id }
+    });
+  } catch (error) {
+    console.error('Error deleting subject:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting course',
+      error: error.message
+    });
+  }
+};
+
+// Reset subject attendance
+export const resetSubject = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Validate subject ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid course ID'
+      });
+    }
+
+    // Check if subject exists
+    const subject = await Subject.findById(id);
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found'
+      });
+    }
+
+    // Delete all attendance records for this subject
+    const deleteResult = await Attendance.deleteMany({ subjectId: id });
+
+    // Check if any records were deleted
+    if (deleteResult.deletedCount === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No attendance records found for this course. Nothing to reset.',
+        data: {
+          subjectId: id,
+          subjectTitle: subject.subjectTitle,
+          departmentOffering: subject.departmentOffering,
+          deletedAttendanceCount: 0
+        }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Course attendance records cleared successfully. ${deleteResult.deletedCount} attendance records deleted.`,
+      data: {
+        subjectId: id,
+        subjectTitle: subject.subjectTitle,
+        departmentOffering: subject.departmentOffering,
+        deletedAttendanceCount: deleteResult.deletedCount
+      }
+    });
+  } catch (error) {
+    console.error('Error resetting subject attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error resetting course attendance',
       error: error.message
     });
   }
@@ -151,7 +363,7 @@ export const getRegisteredStudentsBySubject = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(subjectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid subject ID'
+        message: 'Invalid course ID'
       });
     }
 
@@ -164,7 +376,7 @@ export const getRegisteredStudentsBySubject = async (req, res) => {
     if (!subject) {
       return res.status(404).json({
         success: false,
-        message: 'Subject not found or you do not have permission to view it'
+        message: 'Course not found or you do not have permission to view it'
       });
     }
 
@@ -194,12 +406,12 @@ export const getRegisteredStudentsBySubject = async (req, res) => {
 export const addRegisteredStudents = async (req, res) => {
   try {
     const { subjectId } = req.params;
-    const { teacherId, students } = req.body; // students should be array of {registrationNo, studentName}
+    const { teacherId, students } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(subjectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid subject ID'
+        message: 'Invalid course ID'
       });
     }
 
@@ -212,10 +424,10 @@ export const addRegisteredStudents = async (req, res) => {
 
     // Validate each student object
     for (const student of students) {
-      if (!student.registrationNo || !student.studentName) {
+      if (!student.registrationNo || !student.studentName || !student.discipline) {
         return res.status(400).json({
           success: false,
-          message: 'Each student must have registrationNo and studentName'
+          message: 'Each student must have registrationNo, studentName, and discipline'
         });
       }
     }
@@ -229,7 +441,7 @@ export const addRegisteredStudents = async (req, res) => {
     if (!subject) {
       return res.status(404).json({
         success: false,
-        message: 'Subject not found or you do not have permission to modify it'
+        message: 'Course not found or you do not have permission to modify it'
       });
     }
 
@@ -253,7 +465,7 @@ export const addRegisteredStudents = async (req, res) => {
     if (newStudents.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'All students already exist in this subject',
+        message: 'All students already exist in this course',
         duplicates: duplicateStudents
       });
     }
@@ -289,12 +501,12 @@ export const addRegisteredStudents = async (req, res) => {
 export const updateRegisteredStudent = async (req, res) => {
   try {
     const { subjectId, studentId } = req.params;
-    const { teacherId, registrationNo, studentName } = req.body;
+    const { teacherId, registrationNo, studentName, discipline } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(subjectId) || !mongoose.Types.ObjectId.isValid(studentId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid subject ID or student ID'
+        message: 'Invalid course ID or student ID'
       });
     }
 
@@ -307,7 +519,7 @@ export const updateRegisteredStudent = async (req, res) => {
     if (!subject) {
       return res.status(404).json({
         success: false,
-        message: 'Subject not found or you do not have permission to modify it'
+        message: 'Course not found or you do not have permission to modify it'
       });
     }
 
@@ -332,7 +544,7 @@ export const updateRegisteredStudent = async (req, res) => {
       if (existingStudent) {
         return res.status(400).json({
           success: false,
-          message: 'Registration number already exists in this subject'
+          message: 'Registration number already exists in this course'
         });
       }
     }
@@ -340,6 +552,7 @@ export const updateRegisteredStudent = async (req, res) => {
     // Update student details
     if (registrationNo) subject.registeredStudents[studentIndex].registrationNo = registrationNo;
     if (studentName) subject.registeredStudents[studentIndex].studentName = studentName;
+    if (discipline) subject.registeredStudents[studentIndex].discipline = discipline;
 
     await subject.save();
 
@@ -367,7 +580,7 @@ export const deleteRegisteredStudent = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(subjectId) || !mongoose.Types.ObjectId.isValid(studentId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid subject ID or student ID'
+        message: 'Invalid course ID or student ID'
       });
     }
 
@@ -380,7 +593,7 @@ export const deleteRegisteredStudent = async (req, res) => {
     if (!subject) {
       return res.status(404).json({
         success: false,
-        message: 'Subject not found or you do not have permission to modify it'
+        message: 'Course not found or you do not have permission to modify it'
       });
     }
 
@@ -417,184 +630,6 @@ export const deleteRegisteredStudent = async (req, res) => {
   }
 };
 
-// Existing functions (keep as they are)
-export const updateSubject = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const {
-      subjectTitle,
-      departmentOffering,
-      subjectCode,
-      creditHours,
-      session,
-      status,
-      semester
-    } = req.body;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid subject ID'
-      });
-    }
-
-    // Validate credit hours if provided
-    if (creditHours && (creditHours < 1 || creditHours > 6)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Credit hours must be between 1 and 6'
-      });
-    }
-
-    // Check if subject exists
-    const existingSubject = await Subject.findById(id);
-    if (!existingSubject) {
-      return res.status(404).json({
-        success: false,
-        message: 'Subject not found'
-      });
-    }
-
-    // Check if subject code is being changed and if it already exists
-    if (subjectCode && subjectCode !== existingSubject.subjectCode) {
-      const subjectWithSameCode = await Subject.findOne({
-        subjectCode,
-        _id: { $ne: id }
-      });
-      if (subjectWithSameCode) {
-        return res.status(400).json({
-          success: false,
-          message: 'Subject code already exists'
-        });
-      }
-    }
-
-    // Update subject (excluding registeredStudents)
-    const updatedSubject = await Subject.findByIdAndUpdate(
-      id,
-      {
-        subjectTitle,
-        departmentOffering,
-        subjectCode,
-        creditHours,
-        session,
-        status,
-        semester
-      },
-      { new: true, runValidators: true }
-    );
-
-    res.status(200).json({
-      success: true,
-      message: 'Subject updated successfully',
-      data: updatedSubject
-    });
-  } catch (error) {
-    console.error('Error updating subject:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error updating subject',
-      error: error.message
-    });
-  }
-};
-
-export const deleteSubject = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid subject ID'
-      });
-    }
-
-    const subject = await Subject.findByIdAndDelete(id);
-
-    // Delete all attendance records for this subject
-    await Attendance.deleteMany({ subjectId: id });
-
-    if (!subject) {
-      return res.status(404).json({
-        success: false,
-        message: 'Subject not found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Subject deleted successfully',
-      data: subject
-    });
-  } catch (error) {
-    console.error('Error deleting subject:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error deleting subject',
-      error: error.message
-    });
-  }
-};
-
-export const resetSubject = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // Validate subject ID
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid subject ID'
-      });
-    }
-
-    // Check if subject exists
-    const subject = await Subject.findById(id);
-    if (!subject) {
-      return res.status(404).json({
-        success: false,
-        message: 'Subject not found'
-      });
-    }
-
-    // Delete all attendance records for this subject
-    const deleteResult = await Attendance.deleteMany({ subjectId: id });
-
-    // Check if any records were deleted
-    if (deleteResult.deletedCount === 0) {
-      return res.status(200).json({
-        success: true,
-        message: 'No attendance records found for this subject. Nothing to reset.',
-        data: {
-          subjectId: id,
-          subjectTitle: subject.subjectTitle,
-          departmentOffering: subject.departmentOffering,
-          deletedAttendanceCount: 0
-        }
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: `Subject attendance records cleared successfully. ${deleteResult.deletedCount} attendance records deleted.`,
-      data: {
-        subjectId: id,
-        subjectTitle: subject.subjectTitle,
-        departmentOffering: subject.departmentOffering,
-        deletedAttendanceCount: deleteResult.deletedCount
-      }
-    });
-  } catch (error) {
-    console.error('Error resetting subject attendance:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error resetting subject attendance',
-      error: error.message
-    });
-  }
-};
-
 // Delete all registered students from a subject
 export const deleteAllRegisteredStudents = async (req, res) => {
   try {
@@ -604,7 +639,7 @@ export const deleteAllRegisteredStudents = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(subjectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid subject ID'
+        message: 'Invalid course ID'
       });
     }
 
@@ -617,7 +652,7 @@ export const deleteAllRegisteredStudents = async (req, res) => {
     if (!subject) {
       return res.status(404).json({
         success: false,
-        message: 'Subject not found or you do not have permission to modify it'
+        message: 'Course not found or you do not have permission to modify it'
       });
     }
 
