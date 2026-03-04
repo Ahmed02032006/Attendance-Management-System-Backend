@@ -152,8 +152,9 @@ export const getTeacherStats = async (req, res) => {
       });
     }
 
-    // Get all subjects for the user
-    const subjects = await Subject.find({ userId, status: 'Active' });
+    // Get all subjects for the user - DON'T filter by status initially
+    // This will get ALL subjects for the user
+    const subjects = await Subject.find({ userId });
 
     if (!subjects || subjects.length === 0) {
       return res.status(200).json({
@@ -165,6 +166,7 @@ export const getTeacherStats = async (req, res) => {
           totalAttendanceRecords: 0,
           todayAttendance: 0,
           averageAttendance: 0,
+          attendanceRate: 0,
           mostActiveSubject: 'N/A',
           attendanceBySubject: {},
           attendanceTrend: []
@@ -258,8 +260,8 @@ export const getTeacherStats = async (req, res) => {
         totalAttendance: subjectAttendance.length,
         uniqueAttendanceDays: uniqueDays.size,
         registeredStudents: subject.registeredStudents?.length || 0,
-        attendancePercentage: subject.registeredStudents?.length > 0 
-          ? Math.round((subjectAttendance.length / (subject.registeredStudents.length * uniqueDays.size)) * 100) || 0
+        attendancePercentage: subject.registeredStudents?.length > 0 && uniqueDays.size > 0
+          ? Math.round((subjectAttendance.length / (subject.registeredStudents.length * uniqueDays.size)) * 100) 
           : 0
       };
     });
@@ -284,6 +286,12 @@ export const getTeacherStats = async (req, res) => {
     const attendanceRate = totalPossibleAttendance > 0 
       ? Math.round((totalAttendanceRecords / totalPossibleAttendance) * 100) 
       : 0;
+
+    // Log for debugging
+    console.log('Subjects found:', subjects.length);
+    console.log('Subject IDs:', subjectIds);
+    console.log('Attendance records found:', attendanceRecords.length);
+    console.log('Unique students:', uniqueStudentsSet.size);
 
     res.status(200).json({
       success: true,
