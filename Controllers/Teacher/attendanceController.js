@@ -265,7 +265,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
 
         // Sort students by roll number for each date
         Object.keys(attendanceByDate).forEach(date => {
-          attendanceByDate[date].sort((a, b) => 
+          attendanceByDate[date].sort((a, b) =>
             a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true })
           );
         });
@@ -408,44 +408,65 @@ export const deleteAttendance = async (req, res) => {
   }
 };
 
-export const getStudentByRollNo = async (req, res) => {
+export const getRegisteredStudentByRollNo = async (req, res) => {
   try {
-    const { rollNo } = req.params;
+    const { subjectId, rollNo } = req.params;
 
-    if (!rollNo) {
+    if (!rollNo || !subjectId) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide roll number'
+        message: 'Please provide roll number and subject ID'
       });
     }
 
-    // Find attendance records with this roll number
-    const attendanceRecords = await Attendance.find({ rollNo })
-      .populate('subjectId', 'subjectTitle departmentOffering')
-      .sort({ date: -1 })
-      .limit(1);
+    // Validate subjectId
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
 
-    if (attendanceRecords.length === 0) {
+    // Find the subject and check if student is registered
+    const subject = await Subject.findById(subjectId);
+
+    if (!subject) {
       return res.status(404).json({
         success: false,
-        message: 'Student not found'
+        message: 'Subject not found'
       });
     }
 
-    // Get the most recent record
-    const studentRecord = attendanceRecords[0];
+    // Check if student is registered in this subject
+    const registeredStudent = subject.registeredStudents?.find(
+      student => student.registrationNo === rollNo
+    );
+
+    if (!registeredStudent) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not registered in this course'
+      });
+    }
+
+    // Get discipline from the registered student data
+    // Note: You might need to adjust this based on your registeredStudents structure
+    // If discipline is stored in the registered student object:
+    const discipline = registeredStudent.discipline || '';
+
+    // Or if you need to fetch from another collection, you can do that here
 
     res.status(200).json({
       success: true,
       data: {
-        studentName: studentRecord.studentName,
-        rollNo: studentRecord.rollNo,
-        discipline: studentRecord.discipline
+        rollNo: registeredStudent.registrationNo,
+        discipline: discipline,
+        isRegistered: true
       }
     });
 
   } catch (error) {
-    console.error('Error fetching student by roll no:', error);
+    console.error('Error fetching registered student by roll no:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching student details',
@@ -453,3 +474,4 @@ export const getStudentByRollNo = async (req, res) => {
     });
   }
 };
+
