@@ -407,3 +407,49 @@ export const deleteAttendance = async (req, res) => {
     });
   }
 };
+
+export const getStudentByRollNo = async (req, res) => {
+  try {
+    const { rollNo } = req.params;
+
+    if (!rollNo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide roll number'
+      });
+    }
+
+    // Find attendance records with this roll number
+    const attendanceRecords = await Attendance.find({ rollNo })
+      .populate('subjectId', 'subjectTitle departmentOffering')
+      .sort({ date: -1 })
+      .limit(1);
+
+    if (attendanceRecords.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
+
+    // Get the most recent record
+    const studentRecord = attendanceRecords[0];
+
+    res.status(200).json({
+      success: true,
+      data: {
+        studentName: studentRecord.studentName,
+        rollNo: studentRecord.rollNo,
+        discipline: studentRecord.discipline
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching student by roll no:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching student details',
+      error: error.message
+    });
+  }
+};
