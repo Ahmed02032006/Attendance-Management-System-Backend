@@ -281,6 +281,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
           createdAt: subject.createdDate,
           status: subject.status,
           totalRegisteredStudents: registeredStudents.length,
+          classSchedule: subject.classSchedule || [], // Include class schedule
           attendance: attendanceByDate
         };
       })
