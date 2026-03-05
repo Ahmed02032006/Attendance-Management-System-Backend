@@ -35,19 +35,30 @@ const attendanceSchema = mongoose.Schema({
         type: String,
         required: true,
         trim: true
+    },
+    scheduleDay: {
+        type: String,
+        enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+        required: false
+    },
+    scheduleTime: {
+        type: String,
+        required: false
     }
 }, { timestamps: true });
 
-// Update unique compound index to include discipline
+// Update unique compound index to include scheduleDay and scheduleTime
 attendanceSchema.index(
-    { rollNo: 1, subjectId: 1, date: 1 },
+    { rollNo: 1, subjectId: 1, date: 1, scheduleDay: 1, scheduleTime: 1 },
     {
         unique: true,
-        name: "unique_attendance_per_day",
+        name: "unique_attendance_per_schedule",
         partialFilterExpression: {
             rollNo: { $exists: true },
             subjectId: { $exists: true },
-            date: { $exists: true }
+            date: { $exists: true },
+            scheduleDay: { $exists: true },
+            scheduleTime: { $exists: true }
         }
     }
 );

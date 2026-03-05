@@ -2,6 +2,104 @@ import Attendance from '../../Models/attendanceModel.js';
 import Subject from '../../Models/subjectModel.js';
 import mongoose from 'mongoose';
 
+// Update getSubjectsByUserWithAttendance to include class schedule info
+export const getSubjectsByUserWithAttendance = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Validate userId
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID'
+      });
+    }
+
+    // Get only ACTIVE subjects for this user
+    const subjects = await Subject.find({
+      userId,
+      status: 'Active'
+    }).sort({ createdAt: -1 });
+
+    if (!subjects || subjects.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No active subjects found for this user'
+      });
+    }
+
+    // Get attendance data for all subjects with class schedule info
+    const subjectsWithAttendance = await Promise.all(
+      subjects.map(async (subject) => {
+        // Get all attendance records for this subject
+        const attendanceRecords = await Attendance.find({ subjectId: subject._id })
+          .sort({ date: -1, time: 1 });
+
+        // Get registered students for this subject
+        const registeredStudents = subject.registeredStudents || [];
+
+        // Group attendance by date (format: YYYY-MM-DD)
+        const attendanceByDate = {};
+
+        // Process each attendance record
+        attendanceRecords.forEach(record => {
+          const dateKey = record.date.toISOString().split('T')[0];
+
+          if (!attendanceByDate[dateKey]) {
+            attendanceByDate[dateKey] = {
+              records: [],
+              schedules: subject.classSchedule || [] // Include class schedules for this date
+            };
+          }
+
+          // Add the attendance record with schedule info if available
+          attendanceByDate[dateKey].records.push({
+            id: record._id,
+            studentName: record.studentName,
+            rollNo: record.rollNo,
+            discipline: record.discipline,
+            time: record.time,
+            title: subject.subjectTitle,
+            status: 'Present',
+            scheduleDay: record.scheduleDay, // New field to store which schedule day it was marked for
+            scheduleTime: record.scheduleTime // Store the schedule time range
+          });
+        });
+
+        return {
+          id: subject._id.toString(),
+          title: subject.subjectTitle,
+          departmentOffering: subject.departmentOffering,
+          code: subject.subjectCode,
+          creditHours: subject.creditHours,
+          session: subject.session,
+          semester: subject.semester,
+          createdAt: subject.createdDate,
+          status: subject.status,
+          totalRegisteredStudents: registeredStudents.length,
+          registeredStudents: registeredStudents,
+          classSchedule: subject.classSchedule || [],
+          attendance: attendanceByDate
+        };
+      })
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Active subjects with attendance data fetched successfully',
+      data: subjectsWithAttendance,
+    });
+  } catch (error) {
+    console.error('Error fetching subjects with attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching subjects with attendance data',
+      error: error.message
+    });
+  }
+};
+
+// Update createAttendance to include schedule information
 export const createAttendance = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -14,7 +112,9 @@ export const createAttendance = async (req, res) => {
       time,
       subjectId,
       date,
-      ipAddress
+      ipAddress,
+      scheduleDay, // New field
+      scheduleTime // New field (e.g., "09:00-10:30")
     } = req.body;
 
     if (!studentName || !rollNo || !discipline || !time || !subjectId || !ipAddress) {
@@ -22,7 +122,7 @@ export const createAttendance = async (req, res) => {
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields: studentName, rollNo, discipline, time, subjectId, ipAddress'
+        message: 'Please provide all required fields'
       });
     }
 
@@ -86,14 +186,16 @@ export const createAttendance = async (req, res) => {
     const endOfDay = new Date(attendanceDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // ✅ CONDITION 2: Check if attendance record already exists for same student, subject, and date
+    // ✅ CONDITION 2: Check if attendance record already exists for same student, subject, date, and schedule
     const existingAttendance = await Attendance.findOne({
       rollNo,
       subjectId,
       date: {
         $gte: startOfDay,
         $lte: endOfDay
-      }
+      },
+      scheduleDay: scheduleDay || null,
+      scheduleTime: scheduleTime || null
     }).session(session);
 
     if (existingAttendance) {
@@ -101,7 +203,7 @@ export const createAttendance = async (req, res) => {
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: 'Attendance already marked for this student on this date'
+        message: 'Attendance already marked for this student in this class schedule'
       });
     }
 
@@ -124,7 +226,7 @@ export const createAttendance = async (req, res) => {
       });
     }
 
-    // Create new attendance record with IP address
+    // Create new attendance record with schedule information
     const attendance = new Attendance({
       studentName,
       rollNo,
@@ -132,13 +234,15 @@ export const createAttendance = async (req, res) => {
       time,
       subjectId,
       date: attendanceDate,
-      ipAddress
+      ipAddress,
+      scheduleDay, // Store which day's schedule
+      scheduleTime // Store the time range
     });
 
     const savedAttendance = await attendance.save({ session });
 
     // Populate subject details in response
-    await savedAttendance.populate('subjectId', 'subjectTitle departmentOffering subjectCode');
+    await savedAttendance.populate('subjectId', 'subjectTitle departmentOffering subjectCode classSchedule');
 
     await session.commitTransaction();
     session.endSession();
@@ -166,7 +270,7 @@ export const createAttendance = async (req, res) => {
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'Attendance already marked for this student'
+        message: 'Attendance already marked for this student in this class schedule'
       });
     }
 
@@ -178,129 +282,162 @@ export const createAttendance = async (req, res) => {
   }
 };
 
-export const getSubjectsByUserWithAttendance = async (req, res) => {
+// New endpoint to get attendance for a specific schedule
+export const getAttendanceBySchedule = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { subjectId, date, scheduleDay, scheduleTime } = req.query;
 
-    // Validate userId
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
+    if (!subjectId || !date || !scheduleDay || !scheduleTime) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid user ID'
+        message: 'Please provide subjectId, date, scheduleDay, and scheduleTime'
       });
     }
 
-    // Get only ACTIVE subjects for this user
-    const subjects = await Subject.find({
-      userId,
-      status: 'Active'  // Only fetch Active subjects
-    }).sort({ createdAt: -1 });
+    // Validate subjectId
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
 
-    if (!subjects || subjects.length === 0) {
+    // Find the subject
+    const subject = await Subject.findById(subjectId);
+    if (!subject) {
       return res.status(404).json({
         success: false,
-        message: 'No active subjects found for this user'
+        message: 'Subject not found'
       });
     }
 
-    // Get attendance data for all subjects
-    const subjectsWithAttendance = await Promise.all(
-      subjects.map(async (subject) => {
-        // Get all attendance records for this subject
-        const attendanceRecords = await Attendance.find({ subjectId: subject._id })
-          .sort({ date: -1, time: 1 });
+    // Parse date
+    const targetDate = new Date(date);
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
 
-        // Get registered students for this subject
-        const registeredStudents = subject.registeredStudents || [];
+    // Get attendance records for this subject, date, and schedule
+    const attendanceRecords = await Attendance.find({
+      subjectId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      scheduleDay: scheduleDay,
+      scheduleTime: scheduleTime
+    });
 
-        // Group attendance by date (format: YYYY-MM-DD)
-        const attendanceByDate = {};
+    // Get registered students
+    const registeredStudents = subject.registeredStudents || [];
 
-        // Process each attendance record
-        attendanceRecords.forEach(record => {
-          const dateKey = record.date.toISOString().split('T')[0];
+    // Create a map of present students
+    const presentStudentsMap = {};
+    attendanceRecords.forEach(record => {
+      presentStudentsMap[record.rollNo] = record;
+    });
 
-          if (!attendanceByDate[dateKey]) {
-            // Initialize with all registered students marked as absent
-            attendanceByDate[dateKey] = registeredStudents.map(student => ({
-              id: null, // No attendance ID for absent students
-              studentName: student.studentName,
-              rollNo: student.registrationNo,
-              discipline: null, // No discipline for absent students
-              time: null, // No time for absent students
-              title: subject.subjectTitle,
-              status: 'Absent'
-            }));
-          }
-
-          // Find and update the present student in the array
-          const studentIndex = attendanceByDate[dateKey].findIndex(
-            s => s.rollNo === record.rollNo
-          );
-
-          if (studentIndex !== -1) {
-            // Student is registered - mark as present
-            attendanceByDate[dateKey][studentIndex] = {
-              id: record._id,
-              studentName: record.studentName,
-              rollNo: record.rollNo,
-              discipline: record.discipline,
-              time: record.time,
-              title: subject.subjectTitle,
-              status: 'Present'
-            };
-          } else {
-            // Student is NOT registered - still show them but mark accordingly
-            attendanceByDate[dateKey].push({
-              id: record._id,
-              studentName: record.studentName,
-              rollNo: record.rollNo,
-              discipline: record.discipline,
-              time: record.time,
-              title: subject.subjectTitle,
-              status: 'Not Registered'
-            });
-          }
-        });
-
-        // Sort students by roll number for each date
-        Object.keys(attendanceByDate).forEach(date => {
-          attendanceByDate[date].sort((a, b) =>
-            a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true })
-          );
-        });
-
-        return {
-          id: subject._id.toString(),
-          title: subject.subjectTitle,
-          departmentOffering: subject.departmentOffering,
-          code: subject.subjectCode,
-          creditHours: subject.creditHours,
-          session: subject.session,
-          semester: subject.semester,
-          createdAt: subject.createdDate,
-          status: subject.status,
-          totalRegisteredStudents: registeredStudents.length,
-          attendance: attendanceByDate
-        };
-      })
-    );
+    // Combine registered students with attendance status
+    const studentsWithStatus = registeredStudents.map(student => ({
+      id: presentStudentsMap[student.registrationNo]?._id || null,
+      studentName: student.studentName,
+      rollNo: student.registrationNo,
+      discipline: student.discipline,
+      time: presentStudentsMap[student.registrationNo]?.time || null,
+      title: subject.subjectTitle,
+      status: presentStudentsMap[student.registrationNo] ? 'Present' : 'Absent',
+      scheduleDay: scheduleDay,
+      scheduleTime: scheduleTime
+    }));
 
     res.status(200).json({
       success: true,
-      message: 'Active subjects with attendance data fetched successfully',
-      data: subjectsWithAttendance,
+      data: {
+        subjectId: subject._id,
+        subjectTitle: subject.subjectTitle,
+        date: date,
+        scheduleDay: scheduleDay,
+        scheduleTime: scheduleTime,
+        students: studentsWithStatus,
+        totalPresent: attendanceRecords.length,
+        totalAbsent: registeredStudents.length - attendanceRecords.length,
+        totalRegistered: registeredStudents.length
+      }
     });
   } catch (error) {
-    console.error('Error fetching subjects with attendance:', error);
+    console.error('Error fetching attendance by schedule:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching subjects with attendance data',
+      message: 'Error fetching attendance data',
       error: error.message
     });
   }
 };
 
+// Update the existing endpoints
+export const getRegisteredStudentByRollNo = async (req, res) => {
+  try {
+    const { subjectId, rollNo } = req.params;
+
+    if (!rollNo || !subjectId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide roll number and subject ID'
+      });
+    }
+
+    // Validate subjectId
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
+
+    // Find the subject and check if student is registered
+    const subject = await Subject.findById(subjectId);
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found'
+      });
+    }
+
+    // Check if student is registered in this subject
+    const registeredStudent = subject.registeredStudents?.find(
+      student => student.registrationNo === rollNo
+    );
+
+    if (!registeredStudent) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not registered in this course'
+      });
+    }
+
+    // Get discipline from the registered student data
+    const discipline = registeredStudent.discipline || '';
+
+    res.status(200).json({
+      success: true,
+      data: {
+        rollNo: registeredStudent.registrationNo,
+        studentName: registeredStudent.studentName,
+        discipline: discipline,
+        isRegistered: true
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching registered student by roll no:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching student details',
+      error: error.message
+    });
+  }
+};
+
+// Keep existing updateAttendance and deleteAttendance functions
 export const updateAttendance = async (req, res) => {
   try {
     const { id } = req.params;
@@ -309,7 +446,9 @@ export const updateAttendance = async (req, res) => {
       rollNo,
       discipline,
       time,
-      date
+      date,
+      scheduleDay,
+      scheduleTime
     } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -329,18 +468,20 @@ export const updateAttendance = async (req, res) => {
     }
 
     // Check for duplicate attendance if rollNo or date is being changed
-    if (rollNo || date) {
+    if (rollNo || date || scheduleDay || scheduleTime) {
       const duplicateAttendance = await Attendance.findOne({
         rollNo: rollNo || existingAttendance.rollNo,
         date: new Date(date || existingAttendance.date),
         subjectId: existingAttendance.subjectId,
+        scheduleDay: scheduleDay || existingAttendance.scheduleDay,
+        scheduleTime: scheduleTime || existingAttendance.scheduleTime,
         _id: { $ne: id }
       });
 
       if (duplicateAttendance) {
         return res.status(400).json({
           success: false,
-          message: 'Attendance already exists for this student on this date'
+          message: 'Attendance already exists for this student in this class schedule'
         });
       }
     }
@@ -351,12 +492,14 @@ export const updateAttendance = async (req, res) => {
       {
         studentName,
         rollNo,
-        discipline,  // Add this line
+        discipline,
         time,
-        date: date ? new Date(date) : existingAttendance.date
+        date: date ? new Date(date) : existingAttendance.date,
+        scheduleDay: scheduleDay || existingAttendance.scheduleDay,
+        scheduleTime: scheduleTime || existingAttendance.scheduleTime
       },
       { new: true, runValidators: true }
-    ).populate('subjectId', 'subjectTitle departmentOffering subjectCode');
+    ).populate('subjectId', 'subjectTitle departmentOffering subjectCode classSchedule');
 
     res.status(200).json({
       success: true,
@@ -403,165 +546,6 @@ export const deleteAttendance = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error deleting attendance record',
-      error: error.message
-    });
-  }
-};
-
-export const getRegisteredStudentByRollNo = async (req, res) => {
-  try {
-    const { subjectId, rollNo } = req.params;
-
-    if (!rollNo || !subjectId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide roll number and subject ID'
-      });
-    }
-
-    // Validate subjectId
-    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid subject ID'
-      });
-    }
-
-    // Find the subject and check if student is registered
-    const subject = await Subject.findById(subjectId);
-
-    if (!subject) {
-      return res.status(404).json({
-        success: false,
-        message: 'Subject not found'
-      });
-    }
-
-    // Check if student is registered in this subject
-    const registeredStudent = subject.registeredStudents?.find(
-      student => student.registrationNo === rollNo
-    );
-
-    if (!registeredStudent) {
-      return res.status(404).json({
-        success: false,
-        message: 'Student not registered in this course'
-      });
-    }
-
-    // Get discipline from the registered student data
-    // Note: You might need to adjust this based on your registeredStudents structure
-    // If discipline is stored in the registered student object:
-    const discipline = registeredStudent.discipline || '';
-
-    // Or if you need to fetch from another collection, you can do that here
-
-    res.status(200).json({
-      success: true,
-      data: {
-        rollNo: registeredStudent.registrationNo,
-        discipline: discipline,
-        isRegistered: true
-      }
-    });
-
-  } catch (error) {
-    console.error('Error fetching registered student by roll no:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching student details',
-      error: error.message
-    });
-  }
-};
-
-export const markBulkAttendance = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    const { records } = req.body;
-
-    if (!records || !Array.isArray(records) || records.length === 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide attendance records'
-      });
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const results = [];
-    const errors = [];
-
-    for (const record of records) {
-      try {
-        const {
-          studentName,
-          rollNo,
-          discipline,
-          time,
-          subjectId,
-          scheduleId,
-          date,
-          ipAddress
-        } = record;
-
-        // Check if attendance already exists
-        const existingAttendance = await Attendance.findOne({
-          rollNo,
-          subjectId,
-          scheduleId,
-          date: {
-            $gte: today,
-            $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
-          }
-        }).session(session);
-
-        if (existingAttendance) {
-          errors.push(`${rollNo}: Already marked`);
-          continue;
-        }
-
-        const attendance = new Attendance({
-          studentName,
-          rollNo,
-          discipline,
-          time,
-          subjectId,
-          scheduleId,
-          date: date || today,
-          ipAddress
-        });
-
-        const saved = await attendance.save({ session });
-        results.push(saved);
-      } catch (error) {
-        errors.push(`${record.rollNo}: ${error.message}`);
-      }
-    }
-
-    await session.commitTransaction();
-    session.endSession();
-
-    res.status(201).json({
-      success: true,
-      message: `Marked ${results.length} attendance records. ${errors.length} failed.`,
-      data: {
-        successful: results,
-        failed: errors
-      }
-    });
-  } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    console.error('Error in bulk attendance:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error marking bulk attendance',
       error: error.message
     });
   }
