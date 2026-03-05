@@ -4,7 +4,8 @@ import {
   updateAttendance,
   deleteAttendance,
   getSubjectsByUserWithAttendance,
-  getRegisteredStudentByRollNo
+  getRegisteredStudentByRollNo,
+  markBulkAttendance
 } from '../../Controllers/Teacher/attendanceController.js';
 
 const Router = express.Router();
@@ -14,5 +15,6 @@ Router.get('/user/:userId', getSubjectsByUserWithAttendance);
 Router.route("/:id").put(updateAttendance);
 Router.route("/:id").delete(deleteAttendance);
 Router.get('/registered-student/:subjectId/:rollNo', getRegisteredStudentByRollNo);
+Router.route("/bulk").post(markBulkAttendance);
 
 export default Router;

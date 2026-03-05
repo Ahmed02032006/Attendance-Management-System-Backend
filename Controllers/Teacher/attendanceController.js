@@ -475,3 +475,94 @@ export const getRegisteredStudentByRollNo = async (req, res) => {
   }
 };
 
+export const markBulkAttendance = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { records } = req.body;
+
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide attendance records'
+      });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const results = [];
+    const errors = [];
+
+    for (const record of records) {
+      try {
+        const {
+          studentName,
+          rollNo,
+          discipline,
+          time,
+          subjectId,
+          scheduleId,
+          date,
+          ipAddress
+        } = record;
+
+        // Check if attendance already exists
+        const existingAttendance = await Attendance.findOne({
+          rollNo,
+          subjectId,
+          scheduleId,
+          date: {
+            $gte: today,
+            $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+          }
+        }).session(session);
+
+        if (existingAttendance) {
+          errors.push(`${rollNo}: Already marked`);
+          continue;
+        }
+
+        const attendance = new Attendance({
+          studentName,
+          rollNo,
+          discipline,
+          time,
+          subjectId,
+          scheduleId,
+          date: date || today,
+          ipAddress
+        });
+
+        const saved = await attendance.save({ session });
+        results.push(saved);
+      } catch (error) {
+        errors.push(`${record.rollNo}: ${error.message}`);
+      }
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(201).json({
+      success: true,
+      message: `Marked ${results.length} attendance records. ${errors.length} failed.`,
+      data: {
+        successful: results,
+        failed: errors
+      }
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    console.error('Error in bulk attendance:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error marking bulk attendance',
+      error: error.message
+    });
+  }
+};
