@@ -26,6 +26,11 @@ const attendanceSchema = mongoose.Schema({
         ref: "Subject",
         required: [true, "Please enter subject ID"]
     },
+    classScheduleId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: false, // Optional for backward compatibility
+        ref: "Subject.classSchedule"
+    },
     date: {
         type: Date,
         default: Date.now,
@@ -38,15 +43,16 @@ const attendanceSchema = mongoose.Schema({
     }
 }, { timestamps: true });
 
-// Update unique compound index to include discipline
+// Update unique compound index to include classScheduleId
 attendanceSchema.index(
-    { rollNo: 1, subjectId: 1, date: 1 },
+    { rollNo: 1, subjectId: 1, classScheduleId: 1, date: 1 },
     {
         unique: true,
-        name: "unique_attendance_per_day",
+        name: "unique_attendance_per_class",
         partialFilterExpression: {
             rollNo: { $exists: true },
             subjectId: { $exists: true },
+            classScheduleId: { $exists: true },
             date: { $exists: true }
         }
     }

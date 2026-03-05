@@ -14,7 +14,8 @@ export const createAttendance = async (req, res) => {
       time,
       subjectId,
       date,
-      ipAddress
+      ipAddress,
+      classScheduleId // Add this
     } = req.body;
 
     if (!studentName || !rollNo || !discipline || !time || !subjectId || !ipAddress) {
@@ -86,22 +87,31 @@ export const createAttendance = async (req, res) => {
     const endOfDay = new Date(attendanceDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // ✅ CONDITION 2: Check if attendance record already exists for same student, subject, and date
-    const existingAttendance = await Attendance.findOne({
+    // ✅ CONDITION 2: Check if attendance record already exists for same student, subject, class schedule, and date
+    const query = {
       rollNo,
       subjectId,
       date: {
         $gte: startOfDay,
         $lte: endOfDay
       }
-    }).session(session);
+    };
+
+    // If classScheduleId is provided, include it in the query
+    if (classScheduleId) {
+      query.classScheduleId = classScheduleId;
+    }
+
+    const existingAttendance = await Attendance.findOne(query).session(session);
 
     if (existingAttendance) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: 'Attendance already marked for this student on this date'
+        message: classScheduleId 
+          ? 'Attendance already marked for this student in this class session' 
+          : 'Attendance already marked for this student on this date'
       });
     }
 
@@ -124,13 +134,14 @@ export const createAttendance = async (req, res) => {
       });
     }
 
-    // Create new attendance record with IP address
+    // Create new attendance record with classScheduleId
     const attendance = new Attendance({
       studentName,
       rollNo,
       discipline,
       time,
       subjectId,
+      classScheduleId, // Add this
       date: attendanceDate,
       ipAddress
     });
@@ -166,7 +177,7 @@ export const createAttendance = async (req, res) => {
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
-        message: 'Attendance already marked for this student'
+        message: 'Attendance already marked for this student in this class session'
       });
     }
 
@@ -193,7 +204,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
     // Get only ACTIVE subjects for this user
     const subjects = await Subject.find({
       userId,
-      status: 'Active'  // Only fetch Active subjects
+      status: 'Active'
     }).sort({ createdAt: -1 });
 
     if (!subjects || subjects.length === 0) {
@@ -213,59 +224,76 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
         // Get registered students for this subject
         const registeredStudents = subject.registeredStudents || [];
 
-        // Group attendance by date (format: YYYY-MM-DD)
+        // Group attendance by date and class schedule
         const attendanceByDate = {};
 
         // Process each attendance record
         attendanceRecords.forEach(record => {
           const dateKey = record.date.toISOString().split('T')[0];
+          const scheduleKey = record.classScheduleId ? record.classScheduleId.toString() : 'no-schedule';
 
           if (!attendanceByDate[dateKey]) {
-            // Initialize with all registered students marked as absent
-            attendanceByDate[dateKey] = registeredStudents.map(student => ({
-              id: null, // No attendance ID for absent students
+            attendanceByDate[dateKey] = {};
+          }
+
+          if (!attendanceByDate[dateKey][scheduleKey]) {
+            // Initialize with all registered students marked as absent for this schedule
+            attendanceByDate[dateKey][scheduleKey] = registeredStudents.map(student => ({
+              id: null,
               studentName: student.studentName,
               rollNo: student.registrationNo,
-              discipline: null, // No discipline for absent students
-              time: null, // No time for absent students
+              discipline: null,
+              time: null,
               title: subject.subjectTitle,
-              status: 'Absent'
+              status: 'Absent',
+              classScheduleId: record.classScheduleId
             }));
           }
 
           // Find and update the present student in the array
-          const studentIndex = attendanceByDate[dateKey].findIndex(
+          const studentIndex = attendanceByDate[dateKey][scheduleKey].findIndex(
             s => s.rollNo === record.rollNo
           );
 
           if (studentIndex !== -1) {
             // Student is registered - mark as present
-            attendanceByDate[dateKey][studentIndex] = {
+            attendanceByDate[dateKey][scheduleKey][studentIndex] = {
               id: record._id,
               studentName: record.studentName,
               rollNo: record.rollNo,
               discipline: record.discipline,
               time: record.time,
               title: subject.subjectTitle,
-              status: 'Present'
+              status: 'Present',
+              classScheduleId: record.classScheduleId
             };
           } else {
             // Student is NOT registered - still show them but mark accordingly
-            attendanceByDate[dateKey].push({
+            attendanceByDate[dateKey][scheduleKey].push({
               id: record._id,
               studentName: record.studentName,
               rollNo: record.rollNo,
               discipline: record.discipline,
               time: record.time,
               title: subject.subjectTitle,
-              status: 'Not Registered'
+              status: 'Not Registered',
+              classScheduleId: record.classScheduleId
             });
           }
         });
 
+        // Flatten the nested structure for easier consumption
+        const flattenedAttendance = {};
+        Object.keys(attendanceByDate).forEach(dateKey => {
+          flattenedAttendance[dateKey] = [];
+          Object.values(attendanceByDate[dateKey]).forEach(scheduleRecords => {
+            flattenedAttendance[dateKey].push(...scheduleRecords);
+          });
+        });
+
         // Sort students by roll number for each date
-        Object.keys(attendanceByDate).forEach(date => {
-          attendanceByDate[date].sort((a, b) =>
+        Object.keys(flattenedAttendance).forEach(date => {
+          flattenedAttendance[date].sort((a, b) =>
             a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true })
           );
         });
@@ -281,7 +309,9 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
           createdAt: subject.createdDate,
           status: subject.status,
           totalRegisteredStudents: registeredStudents.length,
-          attendance: attendanceByDate
+          registeredStudents: registeredStudents,
+          classSchedule: subject.classSchedule || [],
+          attendance: flattenedAttendance
         };
       })
     );
