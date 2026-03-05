@@ -50,7 +50,6 @@ const subjectSchema = mongoose.Schema({
     subjectCode: {
         type: String,
         required: [true, "Please enter course code"],
-        unique: true,
         trim: true,
     },
     creditHours: {
