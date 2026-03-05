@@ -113,8 +113,8 @@ export const createAttendance = async (req, res) => {
       subjectId,
       date,
       ipAddress,
-      scheduleDay, // New field
-      scheduleTime // New field (e.g., "09:00-10:30")
+      scheduleDay,
+      scheduleTime
     } = req.body;
 
     if (!studentName || !rollNo || !discipline || !time || !subjectId || !ipAddress) {
@@ -186,7 +186,7 @@ export const createAttendance = async (req, res) => {
     const endOfDay = new Date(attendanceDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // ✅ CONDITION 2: Check if attendance record already exists for same student, subject, date, and schedule
+    // ✅ CONDITION 2: Check if attendance record already exists for the SAME SCHEDULE
     const existingAttendance = await Attendance.findOne({
       rollNo,
       subjectId,
@@ -194,8 +194,11 @@ export const createAttendance = async (req, res) => {
         $gte: startOfDay,
         $lte: endOfDay
       },
-      scheduleDay: scheduleDay || null,
-      scheduleTime: scheduleTime || null
+      // Only check schedule if it's provided
+      ...(scheduleDay && scheduleTime ? {
+        scheduleDay: scheduleDay,
+        scheduleTime: scheduleTime
+      } : {})
     }).session(session);
 
     if (existingAttendance) {
@@ -203,18 +206,26 @@ export const createAttendance = async (req, res) => {
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: 'Attendance already marked for this student in this class schedule'
+        message: scheduleDay && scheduleTime
+          ? 'Attendance already marked for this student in this class schedule'
+          : 'Attendance already marked for this student today'
       });
     }
 
     // ✅ CONDITION 3: Check if same IP address has been used for any attendance on the same day
+    // This prevents device sharing across students, but allows the same device for different schedules
     const existingIPAttendance = await Attendance.findOne({
       ipAddress,
       subjectId,
       date: {
         $gte: startOfDay,
         $lte: endOfDay
-      }
+      },
+      // If schedule info is provided, check for the same schedule
+      ...(scheduleDay && scheduleTime ? {
+        scheduleDay: scheduleDay,
+        scheduleTime: scheduleTime
+      } : {})
     }).session(session);
 
     if (existingIPAttendance) {
@@ -222,7 +233,9 @@ export const createAttendance = async (req, res) => {
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: 'This device has already been used for attendance today'
+        message: scheduleDay && scheduleTime
+          ? 'This device has already been used for attendance in this class schedule'
+          : 'This device has already been used for attendance today'
       });
     }
 
@@ -235,8 +248,8 @@ export const createAttendance = async (req, res) => {
       subjectId,
       date: attendanceDate,
       ipAddress,
-      scheduleDay, // Store which day's schedule
-      scheduleTime // Store the time range
+      scheduleDay: scheduleDay || null,
+      scheduleTime: scheduleTime || null
     });
 
     const savedAttendance = await attendance.save({ session });
@@ -268,10 +281,23 @@ export const createAttendance = async (req, res) => {
     }
 
     if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: 'Attendance already marked for this student in this class schedule'
-      });
+      // Check which index caused the duplicate
+      if (error.message.includes('unique_attendance_per_schedule')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Attendance already marked for this student in this class schedule'
+        });
+      } else if (error.message.includes('unique_attendance_legacy')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Attendance already marked for this student today'
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Duplicate attendance record'
+        });
+      }
     }
 
     res.status(500).json({
@@ -318,7 +344,7 @@ export const getAttendanceBySchedule = async (req, res) => {
     const endOfDay = new Date(targetDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Get attendance records for this subject, date, and schedule
+    // Get attendance records for this subject, date, and specific schedule
     const attendanceRecords = await Attendance.find({
       subjectId,
       date: { $gte: startOfDay, $lte: endOfDay },
@@ -329,13 +355,13 @@ export const getAttendanceBySchedule = async (req, res) => {
     // Get registered students
     const registeredStudents = subject.registeredStudents || [];
 
-    // Create a map of present students
+    // Create a map of present students for this specific schedule
     const presentStudentsMap = {};
     attendanceRecords.forEach(record => {
       presentStudentsMap[record.rollNo] = record;
     });
 
-    // Combine registered students with attendance status
+    // Combine registered students with attendance status for this schedule
     const studentsWithStatus = registeredStudents.map(student => ({
       id: presentStudentsMap[student.registrationNo]?._id || null,
       studentName: student.studentName,
@@ -347,6 +373,11 @@ export const getAttendanceBySchedule = async (req, res) => {
       scheduleDay: scheduleDay,
       scheduleTime: scheduleTime
     }));
+
+    // Sort students by roll number
+    studentsWithStatus.sort((a, b) => 
+      a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true })
+    );
 
     res.status(200).json({
       success: true,
