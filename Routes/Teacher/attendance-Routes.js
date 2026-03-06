@@ -4,13 +4,15 @@ import {
   updateAttendance,
   deleteAttendance,
   getSubjectsByUserWithAttendance,
-  getRegisteredStudentByRollNo
+  getRegisteredStudentByRollNo,
+  getAttendanceBySchedule // New controller function
 } from '../../Controllers/Teacher/attendanceController.js';
 
 const Router = express.Router();
 
 Router.route("/").post(createAttendance);
 Router.get('/user/:userId', getSubjectsByUserWithAttendance);
+Router.get('/schedule/:subjectId/:scheduleId', getAttendanceBySchedule); // New route
 Router.route("/:id").put(updateAttendance);
 Router.route("/:id").delete(deleteAttendance);
 Router.get('/registered-student/:subjectId/:rollNo', getRegisteredStudentByRollNo);
