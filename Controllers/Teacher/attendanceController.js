@@ -115,7 +115,7 @@ export const createAttendance = async (req, res) => {
     const existingAttendance = await Attendance.findOne({
       rollNo,
       subjectId,
-      scheduleId, // Include scheduleId in check
+      scheduleId,
       date: {
         $gte: startOfDay,
         $lte: endOfDay
@@ -123,6 +123,7 @@ export const createAttendance = async (req, res) => {
     }).session(session);
 
     if (existingAttendance) {
+      console.log('Found existing attendance:', existingAttendance);
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({
@@ -241,7 +242,7 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
         if (scheduleId) {
           attendanceQuery.scheduleId = scheduleId;
         }
-        
+
         const attendanceRecords = await Attendance.find(attendanceQuery)
           .sort({ date: -1, time: 1 });
 
@@ -255,11 +256,11 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
         attendanceRecords.forEach(record => {
           const dateKey = record.date.toISOString().split('T')[0];
           const scheduleKey = record.scheduleId?.toString() || 'unknown';
-          
+
           if (!attendanceByDateAndSchedule[dateKey]) {
             attendanceByDateAndSchedule[dateKey] = {};
           }
-          
+
           if (!attendanceByDateAndSchedule[dateKey][scheduleKey]) {
             // Initialize with all registered students marked as absent
             attendanceByDateAndSchedule[dateKey][scheduleKey] = {
@@ -384,10 +385,10 @@ export const getAttendanceBySchedule = async (req, res) => {
       const targetDate = new Date(date);
       const startOfDay = new Date(targetDate);
       startOfDay.setHours(0, 0, 0, 0);
-      
+
       const endOfDay = new Date(targetDate);
       endOfDay.setHours(23, 59, 59, 999);
-      
+
       dateQuery = {
         date: {
           $gte: startOfDay,
@@ -408,11 +409,11 @@ export const getAttendanceBySchedule = async (req, res) => {
 
     // Combine with registered students
     let attendanceByDate = {};
-    
+
     if (date) {
       // For specific date, create full list with absent students
       const dateKey = new Date(date).toISOString().split('T')[0];
-      
+
       attendanceByDate[dateKey] = {
         schedule: schedule,
         students: registeredStudents.map(student => {
@@ -528,7 +529,7 @@ export const getRegisteredStudentByRollNo = async (req, res) => {
       const today = new Date();
       const startOfDay = new Date(today);
       startOfDay.setHours(0, 0, 0, 0);
-      
+
       const endOfDay = new Date(today);
       endOfDay.setHours(23, 59, 59, 999);
 
