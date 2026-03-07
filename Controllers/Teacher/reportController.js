@@ -47,11 +47,10 @@ export const getSubjectAttendanceReport = async (req, res) => {
     }
 
     // Find the subject and verify it belongs to the teacher
-    // Include classSchedule in the selection
     const subject = await Subject.findOne({
       _id: subjectId,
       userId: teacherId
-    }).select('subjectTitle subjectCode departmentOffering semester session registeredStudents classSchedule');
+    }).select('subjectTitle subjectCode departmentOffering semester session registeredStudents');
 
     if (!subject) {
       return res.status(404).json({
@@ -59,16 +58,6 @@ export const getSubjectAttendanceReport = async (req, res) => {
         message: 'Subject not found or you do not have permission to access it'
       });
     }
-
-    // Create a map of schedule IDs to schedule details for quick lookup
-    const scheduleMap = new Map();
-    subject.classSchedule?.forEach(schedule => {
-      scheduleMap.set(schedule._id.toString(), {
-        day: schedule.day,
-        startTime: schedule.startTime,
-        endTime: schedule.endTime
-      });
-    });
 
     // Get registered students for this subject
     const registeredStudents = subject.registeredStudents || [];
@@ -117,14 +106,6 @@ export const getSubjectAttendanceReport = async (req, res) => {
     attendanceRecords.forEach(record => {
       const dateKey = record.date.toISOString().split('T')[0];
       const key = `${record.rollNo}_${dateKey}`;
-      
-      // Get schedule details for this record
-      const scheduleDetails = scheduleMap.get(record.scheduleId?.toString()) || {
-        day: 'Unknown',
-        startTime: '--',
-        endTime: '--'
-      };
-      
       attendanceMap.set(key, {
         id: record._id,
         studentName: record.studentName,
@@ -132,9 +113,6 @@ export const getSubjectAttendanceReport = async (req, res) => {
         discipline: record.discipline,
         time: record.time,
         date: dateKey,
-        scheduleId: record.scheduleId,
-        scheduleDay: scheduleDetails.day,
-        scheduleTime: `${scheduleDetails.startTime} - ${scheduleDetails.endTime}`,
         status: 'Present'
       });
     });
@@ -152,10 +130,7 @@ export const getSubjectAttendanceReport = async (req, res) => {
             status: 'Present',
             time: presentRecord.time,
             discipline: presentRecord.discipline,
-            attendanceId: presentRecord.id,
-            scheduleId: presentRecord.scheduleId,
-            scheduleDay: presentRecord.scheduleDay,
-            scheduleTime: presentRecord.scheduleTime
+            attendanceId: presentRecord.id
           };
         } else {
           return {
@@ -163,10 +138,7 @@ export const getSubjectAttendanceReport = async (req, res) => {
             status: 'Absent',
             time: null,
             discipline: null,
-            attendanceId: null,
-            scheduleId: null,
-            scheduleDay: null,
-            scheduleTime: null
+            attendanceId: null
           };
         }
       });
