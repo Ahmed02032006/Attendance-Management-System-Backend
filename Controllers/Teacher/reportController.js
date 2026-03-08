@@ -294,12 +294,24 @@ export const getStudentAttendanceDetails = async (req, res) => {
 
     // Get the subject details with class schedules
     const subject = await Subject.findById(subjectId)
-      .select('subjectTitle subjectCode departmentOffering classSchedule registeredStudents semester session');
+      .select('classSchedule registeredStudents');
 
     if (!subject) {
       return res.status(404).json({
         success: false,
         message: 'Subject not found'
+      });
+    }
+
+    // Check if student is registered in this subject
+    const isRegistered = subject.registeredStudents?.some(
+      student => student.registrationNo === rollNo
+    );
+
+    if (!isRegistered) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student is not registered in this subject'
       });
     }
 
@@ -341,23 +353,6 @@ export const getStudentAttendanceDetails = async (req, res) => {
       ...dateFilter
     }).sort({ date: -1, time: 1 }); // Sort by date descending, then time
 
-    // Check if student is registered in this subject
-    const isRegistered = subject.registeredStudents?.some(
-      student => student.registrationNo === rollNo
-    );
-
-    if (!isRegistered) {
-      return res.status(404).json({
-        success: false,
-        message: 'Student is not registered in this subject'
-      });
-    }
-
-    // Get student info from registered students list
-    const studentInfo = subject.registeredStudents.find(
-      student => student.registrationNo === rollNo
-    );
-
     // Get all unique dates from attendance records
     const uniqueDates = [...new Set(
       attendanceRecords.map(record => record.date.toISOString().split('T')[0])
@@ -397,26 +392,20 @@ export const getStudentAttendanceDetails = async (req, res) => {
         if (attendance) {
           // Student marked attendance in this schedule
           dateEntry.schedules.push({
-            scheduleId: scheduleId,
             day: schedule.day,
             startTime: schedule.startTime,
             endTime: schedule.endTime,
             status: 'Present',
-            time: attendance.time,
-            ipAddress: attendance.ipAddress,
-            attendanceId: attendance.id
+            time: attendance.time
           });
         } else {
           // Student did not mark attendance in this schedule
           dateEntry.schedules.push({
-            scheduleId: scheduleId,
             day: schedule.day,
             startTime: schedule.startTime,
             endTime: schedule.endTime,
             status: 'Absent',
-            time: null,
-            ipAddress: null,
-            attendanceId: null
+            time: null
           });
         }
       });
@@ -448,14 +437,11 @@ export const getStudentAttendanceDetails = async (req, res) => {
 
           subject.classSchedule.forEach(schedule => {
             dateEntry.schedules.push({
-              scheduleId: schedule._id?.toString() || 'unknown',
               day: schedule.day,
               startTime: schedule.startTime,
               endTime: schedule.endTime,
               status: 'Absent',
-              time: null,
-              ipAddress: null,
-              attendanceId: null
+              time: null
             });
           });
 
@@ -499,20 +485,6 @@ export const getStudentAttendanceDetails = async (req, res) => {
       success: true,
       message: 'Student attendance details fetched successfully',
       data: {
-        studentInfo: {
-          rollNo: rollNo,
-          name: studentInfo?.studentName || null,
-          discipline: studentInfo?.discipline || null
-        },
-        subjectInfo: {
-          id: subject._id,
-          title: subject.subjectTitle,
-          code: subject.subjectCode,
-          department: subject.departmentOffering,
-          semester: subject.semester,
-          session: subject.session,
-          classSchedules: subject.classSchedule
-        },
         summary,
         attendanceByDate
       }
