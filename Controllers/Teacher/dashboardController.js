@@ -103,26 +103,59 @@ export const getAttendanceData = async (req, res) => {
       const attendanceRecords = await Attendance.find({ subjectId: subject._id })
         .sort({ date: -1, time: 1 });
 
-      // Group attendance by date (format: YYYY-MM-DD)
-      const attendanceByDate = {};
+      // Group attendance by date and schedule
+      const attendanceByDateAndSchedule = {};
       
       attendanceRecords.forEach(record => {
         const dateKey = record.date.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+        const scheduleId = record.scheduleId?.toString() || 'unknown';
         
-        if (!attendanceByDate[dateKey]) {
-          attendanceByDate[dateKey] = [];
+        if (!attendanceByDateAndSchedule[dateKey]) {
+          attendanceByDateAndSchedule[dateKey] = {};
         }
         
-        attendanceByDate[dateKey].push({
+        if (!attendanceByDateAndSchedule[dateKey][scheduleId]) {
+          // Initialize array for this schedule on this date
+          attendanceByDateAndSchedule[dateKey][scheduleId] = {
+            schedule: null, // We'll add this below
+            students: []
+          };
+        }
+        
+        attendanceByDateAndSchedule[dateKey][scheduleId].students.push({
           id: record._id.toString(),
           studentName: record.studentName,
           rollNo: record.rollNo,
-          time: record.time
+          time: record.time,
+          status: 'Present'
         });
       });
 
+      // Add schedule information to each schedule entry
+      // This is important for displaying schedule times
+      if (subject.classSchedule && subject.classSchedule.length > 0) {
+        // For each date and schedule, try to find the corresponding schedule from the subject
+        Object.keys(attendanceByDateAndSchedule).forEach(dateKey => {
+          Object.keys(attendanceByDateAndSchedule[dateKey]).forEach(scheduleId => {
+            // Find the schedule in the subject's classSchedule array
+            const scheduleInfo = subject.classSchedule.find(
+              s => s._id.toString() === scheduleId
+            );
+            
+            if (scheduleInfo) {
+              attendanceByDateAndSchedule[dateKey][scheduleId].schedule = {
+                day: scheduleInfo.day,
+                startTime: scheduleInfo.startTime,
+                endTime: scheduleInfo.endTime,
+                _id: scheduleInfo._id
+              };
+            }
+          });
+        });
+      }
+
       // Add to main attendance data object with subject ID as key
-      attendanceData[subject._id.toString()] = attendanceByDate;
+      attendanceData[subject._id.toString()] = attendanceByDateAndSchedule;
     }
 
     res.status(200).json({
