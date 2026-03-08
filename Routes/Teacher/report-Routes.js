@@ -2,8 +2,7 @@ import express from 'express';
 import {
   getSubjectAttendanceReport,
   exportAttendanceReport,
-  getStudentAttendanceDetails,
-  getStudentSummary
+  getStudentAttendanceDetails
 } from '../../Controllers/Teacher/reportController.js';
 
 const Router = express.Router();
