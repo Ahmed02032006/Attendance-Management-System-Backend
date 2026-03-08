@@ -251,14 +251,55 @@ export const exportAttendanceReport = async (req, res) => {
 
 export const getStudentAttendanceDetails = async (req, res) => {
   try {
-    const { rollNo } = req.params;
-    const { fromDate, toDate, subjectId, teacherId } = req.query;
+    const { rollNo, subjectId } = req.params;
+    const { fromDate, toDate, teacherId } = req.query;
 
     // Validate required parameters
-    if (!rollNo) {
+    if (!rollNo || !subjectId) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide roll number'
+        message: 'Please provide roll number and subject ID'
+      });
+    }
+
+    // Validate subjectId
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
+
+    // If teacherId is provided, verify the subject belongs to this teacher
+    if (teacherId) {
+      if (!mongoose.Types.ObjectId.isValid(teacherId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid teacher ID'
+        });
+      }
+
+      const subject = await Subject.findOne({
+        _id: subjectId,
+        userId: teacherId
+      });
+
+      if (!subject) {
+        return res.status(404).json({
+          success: false,
+          message: 'Subject not found or you do not have permission'
+        });
+      }
+    }
+
+    // Get the subject details with class schedules
+    const subject = await Subject.findById(subjectId)
+      .select('subjectTitle subjectCode departmentOffering classSchedule registeredStudents semester session');
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found'
       });
     }
 
@@ -293,221 +334,164 @@ export const getStudentAttendanceDetails = async (req, res) => {
       };
     }
 
-    // Build subject filter
-    let subjectFilter = {};
-    if (subjectId) {
-      if (!mongoose.Types.ObjectId.isValid(subjectId)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid subject ID'
-        });
-      }
-      subjectFilter.subjectId = subjectId;
-    }
-
-    // If teacherId is provided, only get subjects belonging to that teacher
-    let teacherSubjectIds = [];
-    if (teacherId) {
-      if (!mongoose.Types.ObjectId.isValid(teacherId)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid teacher ID'
-        });
-      }
-
-      const teacherSubjects = await Subject.find({ 
-        userId: teacherId,
-        ...(subjectId ? { _id: subjectId } : {})
-      }).select('_id subjectTitle subjectCode departmentOffering classSchedule registeredStudents');
-
-      teacherSubjectIds = teacherSubjects.map(s => s._id.toString());
-      
-      if (teacherSubjectIds.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: subjectId 
-            ? 'Subject not found or you do not have permission' 
-            : 'No subjects found for this teacher'
-        });
-      }
-
-      // If subjectId was provided but not in teacher's subjects, we already returned 404 above
-      if (subjectId) {
-        subjectFilter.subjectId = subjectId;
-      } else {
-        subjectFilter.subjectId = { $in: teacherSubjectIds };
-      }
-    } else if (subjectId) {
-      subjectFilter.subjectId = subjectId;
-    }
-
-    // Find all attendance records for this student
+    // Find all attendance records for this student in this subject
     const attendanceRecords = await Attendance.find({
       rollNo: rollNo,
-      ...dateFilter,
-      ...subjectFilter
+      subjectId: subjectId,
+      ...dateFilter
     }).sort({ date: -1, time: 1 }); // Sort by date descending, then time
 
-    if (attendanceRecords.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: 'No attendance records found for this student',
-        data: {
-          studentInfo: {
-            rollNo: rollNo,
-            name: null,
-            discipline: null
-          },
-          summary: {
-            totalRecords: 0,
-            uniqueSubjects: 0,
-            uniqueDates: 0
-          },
-          attendanceBySubject: {},
-          attendanceByDate: {}
-        }
+    // Check if student is registered in this subject
+    const isRegistered = subject.registeredStudents?.some(
+      student => student.registrationNo === rollNo
+    );
+
+    if (!isRegistered) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student is not registered in this subject'
       });
     }
 
-    // Get student basic info from the most recent record
-    const studentInfo = {
-      rollNo: rollNo,
-      name: attendanceRecords[0].studentName,
-      discipline: attendanceRecords[0].discipline
-    };
+    // Get student info from registered students list
+    const studentInfo = subject.registeredStudents.find(
+      student => student.registrationNo === rollNo
+    );
 
-    // Get all unique subject IDs from attendance records
-    const uniqueSubjectIds = [...new Set(attendanceRecords.map(r => r.subjectId.toString()))];
+    // Get all unique dates from attendance records
+    const uniqueDates = [...new Set(
+      attendanceRecords.map(record => record.date.toISOString().split('T')[0])
+    )].sort().reverse(); // Sort descending (most recent first)
 
-    // Fetch subject details for all subjects
-    const subjects = await Subject.find({
-      _id: { $in: uniqueSubjectIds }
-    }).select('subjectTitle subjectCode departmentOffering classSchedule registeredStudents');
-
-    // Create a map of subject details for quick lookup
-    const subjectDetailsMap = {};
-    subjects.forEach(subject => {
-      subjectDetailsMap[subject._id.toString()] = {
-        id: subject._id,
-        title: subject.subjectTitle,
-        code: subject.subjectCode,
-        department: subject.departmentOffering,
-        classSchedule: subject.classSchedule || []
-      };
-    });
-
-    // Organize attendance by subject
-    const attendanceBySubject = {};
-    
-    for (const subjectId of uniqueSubjectIds) {
-      const subjectRecords = attendanceRecords.filter(r => r.subjectId.toString() === subjectId);
-      const subjectDetails = subjectDetailsMap[subjectId] || {
-        id: subjectId,
-        title: 'Unknown Subject',
-        code: 'N/A',
-        department: 'N/A',
-        classSchedule: []
-      };
-
-      // Group by schedule within subject
-      const attendanceBySchedule = {};
-      
-      subjectRecords.forEach(record => {
-        const scheduleId = record.scheduleId?.toString() || 'unknown';
-        
-        if (!attendanceBySchedule[scheduleId]) {
-          // Find schedule details from subject's classSchedule
-          const scheduleDetails = subjectDetails.classSchedule.find(
-            s => s._id?.toString() === scheduleId
-          ) || { day: 'Unknown', startTime: '?', endTime: '?' };
-
-          attendanceBySchedule[scheduleId] = {
-            scheduleId: scheduleId,
-            scheduleDetails: scheduleDetails,
-            records: []
-          };
-        }
-
-        attendanceBySchedule[scheduleId].records.push({
-          id: record._id,
-          date: record.date.toISOString().split('T')[0],
-          time: record.time,
-          ipAddress: record.ipAddress
-        });
-      });
-
-      // Calculate statistics for this subject
-      const totalRecords = subjectRecords.length;
-      const uniqueDates = [...new Set(subjectRecords.map(r => 
-        r.date.toISOString().split('T')[0]
-      ))].length;
-
-      attendanceBySubject[subjectId] = {
-        subjectDetails: subjectDetails,
-        summary: {
-          totalAttendance: totalRecords,
-          uniqueDays: uniqueDates
-        },
-        schedules: attendanceBySchedule
-      };
-    }
-
-    // Organize attendance by date
-    const attendanceByDate = {};
-    
+    // Create a map for quick lookup of attendance by date and schedule
+    const attendanceMap = new Map();
     attendanceRecords.forEach(record => {
       const dateKey = record.date.toISOString().split('T')[0];
       const scheduleId = record.scheduleId?.toString() || 'unknown';
+      const key = `${dateKey}_${scheduleId}`;
       
-      if (!attendanceByDate[dateKey]) {
-        attendanceByDate[dateKey] = {
-          date: dateKey,
-          records: []
-        };
-      }
-
-      const subjectDetails = subjectDetailsMap[record.subjectId.toString()] || {
-        title: 'Unknown Subject',
-        code: 'N/A'
-      };
-
-      // Find schedule details
-      let scheduleDetails = { day: 'Unknown', startTime: '?', endTime: '?' };
-      if (subjectDetails.classSchedule) {
-        const foundSchedule = subjectDetails.classSchedule.find(
-          s => s._id?.toString() === scheduleId
-        );
-        if (foundSchedule) {
-          scheduleDetails = foundSchedule;
-        }
-      }
-
-      attendanceByDate[dateKey].records.push({
+      attendanceMap.set(key, {
         id: record._id,
-        subjectId: record.subjectId,
-        subjectTitle: subjectDetails.title,
-        subjectCode: subjectDetails.code,
-        scheduleId: scheduleId,
-        scheduleDay: scheduleDetails.day,
-        scheduleTime: `${scheduleDetails.startTime || '?'} - ${scheduleDetails.endTime || '?'}`,
         time: record.time,
-        ipAddress: record.ipAddress
+        ipAddress: record.ipAddress,
+        discipline: record.discipline
       });
     });
 
-    // Sort dates in descending order (most recent first)
-    const sortedDates = Object.keys(attendanceByDate).sort().reverse();
-    const sortedAttendanceByDate = {};
-    sortedDates.forEach(date => {
-      sortedAttendanceByDate[date] = attendanceByDate[date];
+    // Build attendance by date with class schedules
+    const attendanceByDate = [];
+
+    // For each unique date, check attendance in each class schedule
+    uniqueDates.forEach(dateKey => {
+      const dateEntry = {
+        date: dateKey,
+        schedules: []
+      };
+
+      // Check each class schedule for this date
+      subject.classSchedule.forEach(schedule => {
+        const scheduleId = schedule._id?.toString() || 'unknown';
+        const key = `${dateKey}_${scheduleId}`;
+        const attendance = attendanceMap.get(key);
+
+        if (attendance) {
+          // Student marked attendance in this schedule
+          dateEntry.schedules.push({
+            scheduleId: scheduleId,
+            day: schedule.day,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            status: 'Present',
+            time: attendance.time,
+            ipAddress: attendance.ipAddress,
+            attendanceId: attendance.id
+          });
+        } else {
+          // Student did not mark attendance in this schedule
+          dateEntry.schedules.push({
+            scheduleId: scheduleId,
+            day: schedule.day,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            status: 'Absent',
+            time: null,
+            ipAddress: null,
+            attendanceId: null
+          });
+        }
+      });
+
+      attendanceByDate.push(dateEntry);
     });
 
-    // Calculate overall summary
+    // If date range is provided, also include dates with no attendance
+    if (fromDate && toDate) {
+      const startDate = new Date(fromDate);
+      const endDate = new Date(toDate);
+      
+      // Get all dates in range
+      const allDatesInRange = [];
+      const currentDate = new Date(startDate);
+      
+      while (currentDate <= endDate) {
+        allDatesInRange.push(currentDate.toISOString().split('T')[0]);
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      // Add dates that are not in attendance records
+      allDatesInRange.forEach(dateKey => {
+        if (!uniqueDates.includes(dateKey)) {
+          const dateEntry = {
+            date: dateKey,
+            schedules: []
+          };
+
+          subject.classSchedule.forEach(schedule => {
+            dateEntry.schedules.push({
+              scheduleId: schedule._id?.toString() || 'unknown',
+              day: schedule.day,
+              startTime: schedule.startTime,
+              endTime: schedule.endTime,
+              status: 'Absent',
+              time: null,
+              ipAddress: null,
+              attendanceId: null
+            });
+          });
+
+          attendanceByDate.push(dateEntry);
+        }
+      });
+
+      // Sort all dates in descending order
+      attendanceByDate.sort((a, b) => new Date(b.date) - new Date(a.date));
+    }
+
+    // Calculate summary statistics
+    const totalSchedules = subject.classSchedule.length;
+    let totalPresent = 0;
+    let totalPossible = 0;
+
+    attendanceByDate.forEach(dateEntry => {
+      dateEntry.schedules.forEach(schedule => {
+        if (schedule.status === 'Present') {
+          totalPresent++;
+        }
+        totalPossible++;
+      });
+    });
+
+    const attendancePercentage = totalPossible > 0 
+      ? ((totalPresent / totalPossible) * 100).toFixed(1)
+      : 0;
+
     const summary = {
-      totalRecords: attendanceRecords.length,
-      uniqueSubjects: uniqueSubjectIds.length,
-      uniqueDates: sortedDates.length,
-      subjectsWithAttendance: Object.keys(attendanceBySubject).length,
+      totalDates: attendanceByDate.length,
+      totalSchedules: totalSchedules,
+      totalPresent: totalPresent,
+      totalAbsent: totalPossible - totalPresent,
+      totalPossible: totalPossible,
+      attendancePercentage: parseFloat(attendancePercentage),
       dateRange: fromDate && toDate ? { fromDate, toDate } : null
     };
 
@@ -515,10 +499,22 @@ export const getStudentAttendanceDetails = async (req, res) => {
       success: true,
       message: 'Student attendance details fetched successfully',
       data: {
-        studentInfo,
+        studentInfo: {
+          rollNo: rollNo,
+          name: studentInfo?.studentName || null,
+          discipline: studentInfo?.discipline || null
+        },
+        subjectInfo: {
+          id: subject._id,
+          title: subject.subjectTitle,
+          code: subject.subjectCode,
+          department: subject.departmentOffering,
+          semester: subject.semester,
+          session: subject.session,
+          classSchedules: subject.classSchedule
+        },
         summary,
-        attendanceBySubject,
-        attendanceByDate: sortedAttendanceByDate
+        attendanceByDate
       }
     });
 
@@ -527,121 +523,6 @@ export const getStudentAttendanceDetails = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching student attendance details',
-      error: error.message
-    });
-  }
-};
-
-export const getStudentSummary = async (req, res) => {
-  try {
-    const { rollNo } = req.params;
-    const { teacherId } = req.query;
-
-    if (!rollNo) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide roll number'
-      });
-    }
-
-    // Build query
-    let query = { rollNo };
-    
-    // If teacherId provided, only get subjects belonging to that teacher
-    if (teacherId) {
-      if (!mongoose.Types.ObjectId.isValid(teacherId)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid teacher ID'
-        });
-      }
-
-      const teacherSubjects = await Subject.find({ userId: teacherId }).select('_id');
-      const subjectIds = teacherSubjects.map(s => s._id);
-      query.subjectId = { $in: subjectIds };
-    }
-
-    // Get all attendance records for this student
-    const attendanceRecords = await Attendance.find(query).sort({ date: -1 });
-
-    if (attendanceRecords.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: 'No attendance records found',
-        data: {
-          studentInfo: {
-            rollNo,
-            name: null,
-            discipline: null
-          },
-          totalAttendance: 0,
-          subjectsCount: 0,
-          lastAttendance: null
-        }
-      });
-    }
-
-    // Get student info
-    const studentInfo = {
-      rollNo,
-      name: attendanceRecords[0].studentName,
-      discipline: attendanceRecords[0].discipline
-    };
-
-    // Calculate summary
-    const uniqueSubjects = new Set(attendanceRecords.map(r => r.subjectId.toString()));
-    const uniqueDates = new Set(attendanceRecords.map(r => 
-      r.date.toISOString().split('T')[0]
-    ));
-
-    // Get last 5 attendance records
-    const recentAttendance = attendanceRecords.slice(0, 5).map(record => ({
-      id: record._id,
-      date: record.date.toISOString().split('T')[0],
-      time: record.time,
-      subjectId: record.subjectId
-    }));
-
-    // Fetch subject details for recent attendance
-    if (recentAttendance.length > 0) {
-      const subjectIds = [...new Set(recentAttendance.map(r => r.subjectId))];
-      const subjects = await Subject.find({ _id: { $in: subjectIds } })
-        .select('subjectTitle subjectCode');
-      
-      const subjectMap = {};
-      subjects.forEach(s => {
-        subjectMap[s._id.toString()] = s;
-      });
-
-      recentAttendance.forEach(record => {
-        const subject = subjectMap[record.subjectId?.toString()];
-        if (subject) {
-          record.subjectTitle = subject.subjectTitle;
-          record.subjectCode = subject.subjectCode;
-        }
-        delete record.subjectId;
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Student summary fetched successfully',
-      data: {
-        studentInfo,
-        summary: {
-          totalAttendance: attendanceRecords.length,
-          subjectsCount: uniqueSubjects.size,
-          daysCount: uniqueDates.size
-        },
-        recentAttendance
-      }
-    });
-
-  } catch (error) {
-    console.error('Error fetching student summary:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching student summary',
       error: error.message
     });
   }
