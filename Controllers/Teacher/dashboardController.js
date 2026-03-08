@@ -38,20 +38,24 @@ export const getSubjectsByUser = async (req, res) => {
       });
     }
 
-    // Format subjects like dummy object with student counts
+    // Format subjects with both registered students and attendance counts
     const formattedSubjects = await Promise.all(
       subjects.map(async (subject, index) => {
-        // Get unique student count for this subject
-        const studentCount = await Attendance.distinct('rollNo', { 
+        // Get unique student count who marked attendance for this subject
+        const attendanceStudentCount = await Attendance.distinct('rollNo', { 
           subjectId: subject._id 
         });
+
+        // Get total registered students count
+        const registeredStudentsCount = subject.registeredStudents?.length || 0;
 
         return {
           id: subject._id.toString(),
           departmentOffering: subject.departmentOffering,
           title: subject.subjectTitle,
           code: subject.subjectCode,
-          students: studentCount.length,
+          students: attendanceStudentCount.length, // Students who marked attendance
+          registeredStudents: registeredStudentsCount, // Total registered students
           createdAt: subject.createdDate,
           color: subjectColors[index % subjectColors.length] // Cycle through colors
         };
