@@ -10,7 +10,7 @@ const Router = express.Router();
 
 Router.get('/:subjectId', getSubjectAttendanceReport);
 Router.get('/:subjectId/export', exportAttendanceReport);
-Router.get('/:rollNo', getStudentAttendanceDetails);
-Router.get('/:rollNo/summary', getStudentSummary);
+Router.get('/studentAttendanceDetail/:rollNo', getStudentAttendanceDetails);
+Router.get('/studentSummary/:rollNo', getStudentSummary);
 
 export default Router;
