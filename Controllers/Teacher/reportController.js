@@ -50,7 +50,7 @@ export const getSubjectAttendanceReport = async (req, res) => {
     const subject = await Subject.findOne({
       _id: subjectId,
       userId: teacherId
-    }).select('subjectTitle subjectCode departmentOffering semester session registeredStudents classSchedule');
+    }).select('subjectTitle subjectCode departmentOffering semester session registeredStudents');
 
     if (!subject) {
       return res.status(404).json({
@@ -79,7 +79,7 @@ export const getSubjectAttendanceReport = async (req, res) => {
             fromDate: fromDate,
             toDate: toDate
           },
-          totalDays: 0, // Total days when attendance was marked
+          totalDays: 0,
           students: []
         }
       });
@@ -92,51 +92,37 @@ export const getSubjectAttendanceReport = async (req, res) => {
         $gte: startDate,
         $lte: endDate
       }
-    }).sort({ date: 1, time: 1 });
+    }).sort({ date: 1, time: 1 }); // Sort by date ascending, then time
 
-    // Get UNIQUE DATES when attendance was marked (regardless of how many schedules per day)
-    const uniqueMarkedDates = [...new Set(
+    // Get all unique dates where attendance was marked
+    const attendanceDates = [...new Set(
       attendanceRecords.map(record => 
         record.date.toISOString().split('T')[0]
       )
-    )].sort();
+    )].sort(); // Sort dates ascending
 
-    // For each date, we need to know if a student was present in ANY schedule
-    // Create a map of student attendance by date (if present in any schedule)
-    const studentAttendanceByDate = new Map();
-    
+    // Create a map for quick lookup of attendance by rollNo and date
+    const attendanceMap = new Map();
     attendanceRecords.forEach(record => {
       const dateKey = record.date.toISOString().split('T')[0];
-      const studentKey = `${record.rollNo}_${dateKey}`;
-      
-      // If student is marked present in ANY schedule on this date, mark them as present
-      if (!studentAttendanceByDate.has(studentKey)) {
-        studentAttendanceByDate.set(studentKey, {
-          id: record._id,
-          studentName: record.studentName,
-          rollNo: record.rollNo,
-          discipline: record.discipline,
-          time: record.time,
-          date: dateKey,
-          status: 'Present',
-          schedules: [] // Store all schedules they attended
-        });
-      }
-      
-      // Add schedule information to the existing record
-      const existingRecord = studentAttendanceByDate.get(studentKey);
-      existingRecord.schedules.push({
-        scheduleId: record.scheduleId,
-        time: record.time
+      const key = `${record.rollNo}_${dateKey}`;
+      attendanceMap.set(key, {
+        id: record._id,
+        studentName: record.studentName,
+        rollNo: record.rollNo,
+        discipline: record.discipline,
+        time: record.time,
+        date: dateKey,
+        status: 'Present'
       });
     });
 
     // Build the report data for each student
     const reportData = registeredStudents.map((student, index) => {
-      // Initialize attendance array for all marked dates
-      const attendance = uniqueMarkedDates.map(date => {
-        const studentKey = `${student.registrationNo}_${date}`;
-        const presentRecord = studentAttendanceByDate.get(studentKey);
+      // Initialize attendance array for all dates in the range
+      const attendance = attendanceDates.map(date => {
+        const key = `${student.registrationNo}_${date}`;
+        const presentRecord = attendanceMap.get(key);
         
         if (presentRecord) {
           return {
@@ -144,8 +130,7 @@ export const getSubjectAttendanceReport = async (req, res) => {
             status: 'Present',
             time: presentRecord.time,
             discipline: presentRecord.discipline,
-            attendanceId: presentRecord.id,
-            schedules: presentRecord.schedules // Show which schedules they attended
+            attendanceId: presentRecord.id
           };
         } else {
           return {
@@ -153,13 +138,12 @@ export const getSubjectAttendanceReport = async (req, res) => {
             status: 'Absent',
             time: null,
             discipline: null,
-            attendanceId: null,
-            schedules: [] // No schedules attended
+            attendanceId: null
           };
         }
       });
 
-      // Calculate present and absent counts (based on days, not schedules)
+      // Calculate present and absent counts
       const presentCount = attendance.filter(a => a.status === 'Present').length;
       const absentCount = attendance.length - presentCount;
       const percentage = attendance.length > 0 
@@ -172,26 +156,26 @@ export const getSubjectAttendanceReport = async (req, res) => {
         name: student.studentName,
         rollNo: student.registrationNo,
         registrationNo: student.registrationNo,
-        presentCount, // Number of days present
-        absentCount,  // Number of days absent
+        presentCount,
+        absentCount,
         percentage: parseFloat(percentage),
-        attendance // Daily attendance with schedule details
+        attendance
       };
     });
 
-    // Sort students by roll number
+    // Sort students by roll number (alphanumeric sort)
     reportData.sort((a, b) => 
       a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true })
     );
 
     // Calculate summary statistics
     const totalStudents = reportData.length;
-    const totalDays = uniqueMarkedDates.length; // This counts DAYS, not schedules
+    const totalDays = attendanceDates.length;
     
     const summary = {
       totalStudents,
-      totalDays, // Total number of days when attendance was marked
-      dates: uniqueMarkedDates,
+      totalDays,
+      dates: attendanceDates,
       averageAttendance: totalStudents > 0 
         ? (reportData.reduce((sum, student) => sum + student.percentage, 0) / totalStudents).toFixed(1)
         : 0,
@@ -310,7 +294,7 @@ export const getStudentAttendanceDetails = async (req, res) => {
 
     // Get the subject details with class schedules
     const subject = await Subject.findById(subjectId)
-      .select('classSchedule registeredStudents subjectTitle subjectCode');
+      .select('classSchedule registeredStudents');
 
     if (!subject) {
       return res.status(404).json({
@@ -320,24 +304,22 @@ export const getStudentAttendanceDetails = async (req, res) => {
     }
 
     // Check if student is registered in this subject
-    const studentInfo = subject.registeredStudents?.find(
+    const isRegistered = subject.registeredStudents?.some(
       student => student.registrationNo === rollNo
     );
 
-    if (!studentInfo) {
+    if (!isRegistered) {
       return res.status(404).json({
         success: false,
         message: 'Student is not registered in this subject'
       });
     }
 
-    // Validate and parse dates
-    let startDate, endDate;
+    // Build date filter if provided
     let dateFilter = {};
-    
     if (fromDate && toDate) {
-      startDate = new Date(fromDate);
-      endDate = new Date(toDate);
+      const startDate = new Date(fromDate);
+      const endDate = new Date(toDate);
       
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
         return res.status(400).json({
@@ -364,99 +346,139 @@ export const getStudentAttendanceDetails = async (req, res) => {
       };
     }
 
-    // STEP 1: Get ALL unique dates when attendance was marked for this subject in the date range
-    // This ensures we only count days when teacher actually marked attendance
-    const markedDatesQuery = Attendance.distinct('date', {
-      subjectId: subjectId,
-      ...dateFilter
-    });
-
-    const markedDatesArray = await markedDatesQuery;
-    
-    // Convert to unique date strings (without time)
-    const uniqueMarkedDateStrings = [...new Set(
-      markedDatesArray.map(date => 
-        new Date(date).toISOString().split('T')[0]
-      )
-    )].sort();
-
-    // STEP 2: Get attendance records for this specific student
-    const studentAttendanceRecords = await Attendance.find({
+    // Find all attendance records for this student in this subject
+    const attendanceRecords = await Attendance.find({
       rollNo: rollNo,
       subjectId: subjectId,
       ...dateFilter
-    }).sort({ date: -1, time: 1 });
+    }).sort({ date: -1, time: 1 }); // Sort by date descending, then time
 
-    // STEP 3: Create a map of dates where this student was present
-    // Student is considered present on a date if they attended ANY schedule
-    const studentPresentDates = new Map();
-    
-    studentAttendanceRecords.forEach(record => {
-      const dateKey = new Date(record.date).toISOString().split('T')[0];
+    // Get all unique dates from attendance records
+    const uniqueDates = [...new Set(
+      attendanceRecords.map(record => record.date.toISOString().split('T')[0])
+    )].sort().reverse(); // Sort descending (most recent first)
+
+    // Create a map for quick lookup of attendance by date and schedule
+    const attendanceMap = new Map();
+    attendanceRecords.forEach(record => {
+      const dateKey = record.date.toISOString().split('T')[0];
+      const scheduleId = record.scheduleId?.toString() || 'unknown';
+      const key = `${dateKey}_${scheduleId}`;
       
-      if (!studentPresentDates.has(dateKey)) {
-        studentPresentDates.set(dateKey, {
-          date: dateKey,
-          schedules: []
-        });
-      }
-      
-      // Add schedule information
-      const dateEntry = studentPresentDates.get(dateKey);
-      dateEntry.schedules.push({
-        scheduleId: record.scheduleId,
+      attendanceMap.set(key, {
+        id: record._id,
         time: record.time,
         ipAddress: record.ipAddress,
-        discipline: record.discipline,
-        attendanceId: record._id
+        discipline: record.discipline
       });
     });
 
-    // STEP 4: Build attendance data for ALL marked dates
+    // Build attendance by date with class schedules
     const attendanceByDate = [];
-    let presentCount = 0;
 
-    uniqueMarkedDateStrings.forEach(dateKey => {
-      const isPresent = studentPresentDates.has(dateKey);
-      
-      if (isPresent) {
-        presentCount++;
-      }
-      
-      attendanceByDate.push({
+    // For each unique date, check attendance in each class schedule
+    uniqueDates.forEach(dateKey => {
+      const dateEntry = {
         date: dateKey,
-        status: isPresent ? 'Present' : 'Absent',
-        schedules: isPresent ? studentPresentDates.get(dateKey).schedules : []
+        schedules: []
+      };
+
+      // Check each class schedule for this date
+      subject.classSchedule.forEach(schedule => {
+        const scheduleId = schedule._id?.toString() || 'unknown';
+        const key = `${dateKey}_${scheduleId}`;
+        const attendance = attendanceMap.get(key);
+
+        if (attendance) {
+          // Student marked attendance in this schedule
+          dateEntry.schedules.push({
+            day: schedule.day,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            status: 'Present',
+            time: attendance.time
+          });
+        } else {
+          // Student did not mark attendance in this schedule
+          dateEntry.schedules.push({
+            day: schedule.day,
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            status: 'Absent',
+            time: null
+          });
+        }
+      });
+
+      attendanceByDate.push(dateEntry);
+    });
+
+    // If date range is provided, also include dates with no attendance
+    if (fromDate && toDate) {
+      const startDate = new Date(fromDate);
+      const endDate = new Date(toDate);
+      
+      // Get all dates in range
+      const allDatesInRange = [];
+      const currentDate = new Date(startDate);
+      
+      while (currentDate <= endDate) {
+        allDatesInRange.push(currentDate.toISOString().split('T')[0]);
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      // Add dates that are not in attendance records
+      allDatesInRange.forEach(dateKey => {
+        if (!uniqueDates.includes(dateKey)) {
+          const dateEntry = {
+            date: dateKey,
+            schedules: []
+          };
+
+          subject.classSchedule.forEach(schedule => {
+            dateEntry.schedules.push({
+              day: schedule.day,
+              startTime: schedule.startTime,
+              endTime: schedule.endTime,
+              status: 'Absent',
+              time: null
+            });
+          });
+
+          attendanceByDate.push(dateEntry);
+        }
+      });
+
+      // Sort all dates in descending order
+      attendanceByDate.sort((a, b) => new Date(b.date) - new Date(a.date));
+    }
+
+    // Calculate summary statistics
+    const totalSchedules = subject.classSchedule.length;
+    let totalPresent = 0;
+    let totalPossible = 0;
+
+    attendanceByDate.forEach(dateEntry => {
+      dateEntry.schedules.forEach(schedule => {
+        if (schedule.status === 'Present') {
+          totalPresent++;
+        }
+        totalPossible++;
       });
     });
 
-    // Sort dates in descending order (most recent first)
-    attendanceByDate.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    // Calculate statistics
-    const totalMarkedDays = uniqueMarkedDateStrings.length; // Same for all students
-    const absentCount = totalMarkedDays - presentCount;
-    const attendancePercentage = totalMarkedDays > 0 
-      ? ((presentCount / totalMarkedDays) * 100).toFixed(1)
+    const attendancePercentage = totalPossible > 0 
+      ? ((totalPresent / totalPossible) * 100).toFixed(1)
       : 0;
 
     const summary = {
-      studentInfo: {
-        name: studentInfo.studentName,
-        rollNo: studentInfo.registrationNo,
-        discipline: studentInfo.discipline
-      },
-      subjectInfo: {
-        id: subject._id,
-        title: subject.subjectTitle,
-        code: subject.subjectCode,
-        classSchedule: subject.classSchedule
-      },
-      dateRange: fromDate && toDate ? { fromDate, toDate } : null,
-      totalMarkedDays: totalMarkedDays, // This is SAME for all students
-      presentDays: presentCount,
-      absentDays: absentCount,
-      attendancePercentage: parseFloat(attendancePercentage)
+      totalDates: attendanceByDate.length,
+      totalSchedules: totalSchedules,
+      totalPresent: totalPresent,
+      totalAbsent: totalPossible - totalPresent,
+      totalPossible: totalPossible,
+      attendancePercentage: parseFloat(attendancePercentage),
+      dateRange: fromDate && toDate ? { fromDate, toDate } : null
     };
 
     res.status(200).json({
@@ -464,7 +486,7 @@ export const getStudentAttendanceDetails = async (req, res) => {
       message: 'Student attendance details fetched successfully',
       data: {
         summary,
-        attendanceByDate // Daily attendance with schedule details
+        attendanceByDate
       }
     });
 
@@ -477,4 +499,3 @@ export const getStudentAttendanceDetails = async (req, res) => {
     });
   }
 };
-
