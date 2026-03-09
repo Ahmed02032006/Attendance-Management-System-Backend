@@ -315,18 +315,7 @@ export const getStudentAttendanceDetails = async (req, res) => {
       });
     }
 
-    // Define day mapping for easier comparison
-    const dayMap = {
-      'Monday': 1,
-      'Tuesday': 2,
-      'Wednesday': 3,
-      'Thursday': 4,
-      'Friday': 5,
-      'Saturday': 6,
-      'Sunday': 0
-    };
-
-    // Determine date range to consider
+    // Determine date range
     let startDate, endDate;
     
     if (fromDate && toDate) {
@@ -350,23 +339,32 @@ export const getStudentAttendanceDetails = async (req, res) => {
         });
       }
     } else {
-      // If no date range provided, find the earliest and latest attendance dates
-      const attendanceRecords = await Attendance.find({
-        rollNo: rollNo,
-        subjectId: subjectId
-      }).select('date').sort({ date: 1 });
-      
-      if (attendanceRecords.length > 0) {
-        startDate = new Date(attendanceRecords[0].date);
+      // If no date range provided, get the earliest and latest attendance dates for this subject
+      const dateRange = await Attendance.aggregate([
+        {
+          $match: {
+            subjectId: new mongoose.Types.ObjectId(subjectId)
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            minDate: { $min: "$date" },
+            maxDate: { $max: "$date" }
+          }
+        }
+      ]);
+
+      if (dateRange.length > 0) {
+        startDate = new Date(dateRange[0].minDate);
+        endDate = new Date(dateRange[0].maxDate);
         startDate.setHours(0, 0, 0, 0);
-        
-        endDate = new Date(attendanceRecords[attendanceRecords.length - 1].date);
         endDate.setHours(23, 59, 59, 999);
       } else {
-        // If no attendance records, return empty response
+        // If no attendance records at all, return empty response
         return res.status(200).json({
           success: true,
-          message: 'No attendance records found for this student',
+          message: 'No attendance records found for this subject',
           data: {
             summary: {
               totalDates: 0,
@@ -383,40 +381,15 @@ export const getStudentAttendanceDetails = async (req, res) => {
       }
     }
 
-    // Generate all valid class dates within the range
-    const validClassDates = [];
-    const currentDate = new Date(startDate);
-    
-    while (currentDate <= endDate) {
-      const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-      const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek];
-      
-      // Check if this day has any class schedule
-      const hasClassOnThisDay = subject.classSchedule.some(
-        schedule => schedule.day === dayName
-      );
-      
-      if (hasClassOnThisDay) {
-        validClassDates.push(new Date(currentDate));
-      }
-      
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    // Create date filter for attendance query
-    const attendanceDateFilter = {
+    // Get all attendance records for this student in this subject within date range
+    const attendanceRecords = await Attendance.find({
+      rollNo: rollNo,
+      subjectId: subjectId,
       date: {
         $gte: startDate,
         $lte: endDate
       }
-    };
-
-    // Find all attendance records for this student in this subject within the date range
-    const attendanceRecords = await Attendance.find({
-      rollNo: rollNo,
-      subjectId: subjectId,
-      ...attendanceDateFilter
-    }).sort({ date: -1, time: 1 }); // Sort by date descending, then time
+    }).sort({ date: 1, time: 1 });
 
     // Create a map for quick lookup of attendance by date and schedule
     const attendanceMap = new Map();
@@ -433,27 +406,26 @@ export const getStudentAttendanceDetails = async (req, res) => {
       });
     });
 
-    // Build attendance by date with class schedules
+    // Generate all dates in the range
+    const allDatesInRange = [];
+    const currentDate = new Date(startDate);
+    
+    while (currentDate <= endDate) {
+      allDatesInRange.push(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Build attendance by date with class schedules for ALL dates in range
     const attendanceByDate = [];
 
-    // Process each valid class date
-    validClassDates.forEach(date => {
-      const dateKey = date.toISOString().split('T')[0];
-      const dayOfWeek = date.getDay();
-      const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayOfWeek];
-      
-      // Get schedules for this day
-      const schedulesForThisDay = subject.classSchedule.filter(
-        schedule => schedule.day === dayName
-      );
-      
+    allDatesInRange.forEach(dateKey => {
       const dateEntry = {
         date: dateKey,
         schedules: []
       };
 
-      // Check attendance for each schedule on this day
-      schedulesForThisDay.forEach(schedule => {
+      // Check each class schedule for this date
+      subject.classSchedule.forEach(schedule => {
         const scheduleId = schedule._id?.toString() || 'unknown';
         const key = `${dateKey}_${scheduleId}`;
         const attendance = attendanceMap.get(key);
@@ -466,7 +438,7 @@ export const getStudentAttendanceDetails = async (req, res) => {
             endTime: schedule.endTime,
             status: 'Present',
             time: attendance.time,
-            scheduleId: schedule._id
+            attendanceId: attendance.id
           });
         } else {
           // Student did not mark attendance in this schedule
@@ -476,7 +448,7 @@ export const getStudentAttendanceDetails = async (req, res) => {
             endTime: schedule.endTime,
             status: 'Absent',
             time: null,
-            scheduleId: schedule._id
+            attendanceId: null
           });
         }
       });
@@ -484,20 +456,19 @@ export const getStudentAttendanceDetails = async (req, res) => {
       attendanceByDate.push(dateEntry);
     });
 
-    // Sort dates in descending order
+    // Sort dates in descending order (most recent first)
     attendanceByDate.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // Calculate summary statistics
     const totalSchedules = subject.classSchedule.length;
+    const totalPossible = allDatesInRange.length * totalSchedules;
+    
     let totalPresent = 0;
-    let totalPossible = 0;
-
     attendanceByDate.forEach(dateEntry => {
       dateEntry.schedules.forEach(schedule => {
         if (schedule.status === 'Present') {
           totalPresent++;
         }
-        totalPossible++;
       });
     });
 
@@ -506,13 +477,16 @@ export const getStudentAttendanceDetails = async (req, res) => {
       : 0;
 
     const summary = {
-      totalDates: attendanceByDate.length,
+      totalDates: allDatesInRange.length,
       totalSchedules: totalSchedules,
       totalPresent: totalPresent,
       totalAbsent: totalPossible - totalPresent,
       totalPossible: totalPossible,
       attendancePercentage: parseFloat(attendancePercentage),
-      dateRange: fromDate && toDate ? { fromDate, toDate } : null
+      dateRange: {
+        fromDate: startDate.toISOString().split('T')[0],
+        toDate: endDate.toISOString().split('T')[0]
+      }
     };
 
     res.status(200).json({
