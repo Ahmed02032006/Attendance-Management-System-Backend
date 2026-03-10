@@ -205,8 +205,6 @@ export const getTeacherStats = async (req, res) => {
       });
     }
 
-    const subjectIds = subjects.map(subject => subject._id);
-    
     // 1. TOTAL COURSES
     const totalCourses = subjects.length;
 
@@ -223,7 +221,7 @@ export const getTeacherStats = async (req, res) => {
 
     // Get all attendance records for these subjects
     const attendanceRecords = await Attendance.find({
-      subjectId: { $in: subjectIds }
+      subjectId: { $in: subjects.map(s => s._id) }
     });
 
     // 3. TOTAL ATTENDANCE DAYS (unique days across all subjects)
@@ -234,90 +232,61 @@ export const getTeacherStats = async (req, res) => {
     });
     const totalAttendanceDays = uniqueAttendanceDaysSet.size;
 
-    // 4. ATTENDANCE PERCENTAGE - CORRECTED CALCULATION
-    let attendancePercentage = 0;
-    let totalPossibleAttendances = 0;
-    let totalActualAttendances = attendanceRecords.length;
+    // 4. ATTENDANCE PERCENTAGE - FIXED CALCULATION
+    let totalExpectedAttendances = 0;
+    let totalActualAttendances = 0;
 
-    if (totalCourses > 0 && attendanceRecords.length > 0) {
-      // For each subject, calculate the number of registered students × attendance days for that subject
-      for (const subject of subjects) {
-        // Get unique attendance days for this specific subject
-        const subjectAttendanceRecords = attendanceRecords.filter(
-          record => record.subjectId.toString() === subject._id.toString()
-        );
-        
-        // Get unique days for this subject
-        const subjectUniqueDays = new Set();
-        subjectAttendanceRecords.forEach(record => {
-          const dateKey = new Date(record.date).toISOString().split('T')[0];
-          subjectUniqueDays.add(dateKey);
-        });
-        
-        // Number of registered students for this subject
-        const subjectStudentCount = subject.registeredStudents?.length || 0;
-        
-        // Add to total possible attendances
-        totalPossibleAttendances += subjectStudentCount * subjectUniqueDays.size;
-      }
-      
-      // Calculate percentage (cap at 100% to handle any floating point issues)
-      if (totalPossibleAttendances > 0) {
-        attendancePercentage = Math.min(
-          Math.round((totalActualAttendances / totalPossibleAttendances) * 100),
-          100
-        );
-      }
-    }
-
-    // Alternative simpler approach if you want to calculate per subject and average
-    let alternativePercentage = 0;
-    let totalSubjectsWithData = 0;
-    
-    // Calculate attendance percentage per subject and then average
+    // For each subject, calculate expected and actual attendances
     for (const subject of subjects) {
       const subjectAttendanceRecords = attendanceRecords.filter(
         record => record.subjectId.toString() === subject._id.toString()
       );
-      
-      const subjectUniqueDays = new Set();
+
+      // Get unique dates for this subject (when attendance was taken)
+      const subjectUniqueDates = new Set();
       subjectAttendanceRecords.forEach(record => {
         const dateKey = new Date(record.date).toISOString().split('T')[0];
-        subjectUniqueDays.add(dateKey);
+        subjectUniqueDates.add(dateKey);
       });
-      
+
+      // Number of registered students for this subject
       const subjectStudentCount = subject.registeredStudents?.length || 0;
-      const subjectAttendanceDays = subjectUniqueDays.size;
-      
-      if (subjectStudentCount > 0 && subjectAttendanceDays > 0) {
-        const subjectPossibleAttendances = subjectStudentCount * subjectAttendanceDays;
-        const subjectActualAttendances = subjectAttendanceRecords.length;
-        const subjectPercentage = (subjectActualAttendances / subjectPossibleAttendances) * 100;
-        alternativePercentage += subjectPercentage;
-        totalSubjectsWithData++;
-      }
-    }
-    
-    // Average the percentages if we have data
-    if (totalSubjectsWithData > 0) {
-      alternativePercentage = Math.min(
-        Math.round(alternativePercentage / totalSubjectsWithData),
-        100
-      );
+
+      // For each date, we expect each registered student to be present
+      // So expected attendances = number of students × number of attendance days
+      const expectedForSubject = subjectStudentCount * subjectUniqueDates.size;
+      totalExpectedAttendances += expectedForSubject;
+
+      // Actual attendances is simply the number of attendance records
+      totalActualAttendances += subjectAttendanceRecords.length;
     }
 
-    // Use the alternative method as it's more intuitive (average attendance rate across subjects)
-    const finalAttendancePercentage = alternativePercentage || attendancePercentage;
+    // Calculate attendance percentage
+    let attendancePercentage = 0;
+    if (totalExpectedAttendances > 0) {
+      attendancePercentage = Math.round((totalActualAttendances / totalExpectedAttendances) * 100);
+      
+      // Cap at 100% (though theoretically it shouldn't exceed 100%)
+      attendancePercentage = Math.min(attendancePercentage, 100);
+    }
 
     // Log for debugging
     console.log('Stats calculated:', {
       totalCourses,
       totalRegisteredStudents,
       totalAttendanceDays,
-      attendancePercentage: finalAttendancePercentage,
-      totalActualAttendances: attendanceRecords.length,
-      totalPossibleAttendances,
-      method: alternativePercentage > 0 ? 'average method' : 'aggregate method'
+      attendancePercentage,
+      totalActualAttendances,
+      totalExpectedAttendances,
+      subjects: subjects.map(s => ({
+        subjectCode: s.subjectCode,
+        studentCount: s.registeredStudents?.length || 0,
+        attendanceDays: new Set(
+          attendanceRecords
+            .filter(r => r.subjectId.toString() === s._id.toString())
+            .map(r => new Date(r.date).toISOString().split('T')[0])
+        ).size
+      }))
     });
 
     res.status(200).json({
@@ -327,7 +296,7 @@ export const getTeacherStats = async (req, res) => {
         totalCourses,
         totalRegisteredStudents,
         totalAttendanceDays,
-        attendancePercentage: finalAttendancePercentage
+        attendancePercentage
       }
     });
 
