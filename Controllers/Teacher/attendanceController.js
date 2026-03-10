@@ -33,7 +33,7 @@ export const createAttendance = async (req, res) => {
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: 'Invalid subject ID'
+        message: 'Invalid course ID'
       });
     }
 
@@ -54,7 +54,7 @@ export const createAttendance = async (req, res) => {
       session.endSession();
       return res.status(404).json({
         success: false,
-        message: 'Subject not found'
+        message: 'Course not found'
       });
     }
 
@@ -68,7 +68,7 @@ export const createAttendance = async (req, res) => {
       session.endSession();
       return res.status(400).json({
         success: false,
-        message: 'Schedule not found for this subject'
+        message: 'Schedule not found for this course'
       });
     }
 
@@ -335,14 +335,14 @@ export const getSubjectsByUserWithAttendance = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Active subjects with attendance data fetched successfully',
+      message: 'Active courses with attendance data fetched successfully',
       data: subjectsWithAttendance,
     });
   } catch (error) {
     console.error('Error fetching subjects with attendance:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching subjects with attendance data',
+      message: 'Error fetching courses with attendance data',
       error: error.message
     });
   }
@@ -357,7 +357,7 @@ export const getAttendanceBySchedule = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(subjectId) || !mongoose.Types.ObjectId.isValid(scheduleId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid subject ID or schedule ID'
+        message: 'Invalid course ID or schedule ID'
       });
     }
 
@@ -366,7 +366,7 @@ export const getAttendanceBySchedule = async (req, res) => {
     if (!subject) {
       return res.status(404).json({
         success: false,
-        message: 'Subject not found'
+        message: 'Course not found'
       });
     }
 
@@ -489,7 +489,7 @@ export const getRegisteredStudentByRollNo = async (req, res) => {
     if (!rollNo || !subjectId) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide roll number and subject ID'
+        message: 'Please provide roll number and course ID'
       });
     }
 
@@ -497,7 +497,7 @@ export const getRegisteredStudentByRollNo = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(subjectId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid subject ID'
+        message: 'Invalid course ID'
       });
     }
 
@@ -507,7 +507,7 @@ export const getRegisteredStudentByRollNo = async (req, res) => {
     if (!subject) {
       return res.status(404).json({
         success: false,
-        message: 'Subject not found'
+        message: 'Course not found'
       });
     }
 
