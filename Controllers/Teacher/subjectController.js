@@ -222,37 +222,6 @@ export const updateSubject = async (req, res) => {
       }
     }
 
-    // Preserve existing schedule IDs when updating
-    let updatedClassSchedule = classSchedule;
-
-    if (classSchedule && classSchedule.length > 0) {
-      // Create a map of existing schedules by their unique identifier (day+startTime+endTime)
-      const existingScheduleMap = new Map();
-      existingSubject.classSchedule.forEach(schedule => {
-        const key = `${schedule.day}_${schedule.startTime}_${schedule.endTime}`;
-        existingScheduleMap.set(key, schedule._id);
-      });
-
-      // Update schedules, preserving IDs for unchanged ones
-      updatedClassSchedule = classSchedule.map(newSchedule => {
-        const key = `${newSchedule.day}_${newSchedule.startTime}_${newSchedule.endTime}`;
-        const existingId = existingScheduleMap.get(key);
-
-        // If this schedule already exists with the same day/time, preserve its ID
-        if (existingId) {
-          return {
-            _id: existingId,
-            day: newSchedule.day,
-            startTime: newSchedule.startTime,
-            endTime: newSchedule.endTime
-          };
-        }
-
-        // This is a new schedule, let MongoDB generate a new ID
-        return newSchedule;
-      });
-    }
-
     // Update subject
     const updatedSubject = await Subject.findByIdAndUpdate(
       id,
@@ -264,7 +233,7 @@ export const updateSubject = async (req, res) => {
         session,
         status,
         semester,
-        classSchedule: updatedClassSchedule // Update with preserved IDs
+        classSchedule // Update class schedule
       },
       { new: true, runValidators: true }
     );
@@ -297,7 +266,7 @@ export const deleteSubject = async (req, res) => {
     }
 
     const subject = await Subject.findById(id);
-
+    
     if (!subject) {
       return res.status(404).json({
         success: false,
