@@ -205,6 +205,8 @@ export const getTeacherStats = async (req, res) => {
       });
     }
 
+    const subjectIds = subjects.map(subject => subject._id);
+    
     // 1. TOTAL COURSES
     const totalCourses = subjects.length;
 
@@ -221,53 +223,69 @@ export const getTeacherStats = async (req, res) => {
 
     // Get all attendance records for these subjects
     const attendanceRecords = await Attendance.find({
-      subjectId: { $in: subjects.map(s => s._id) }
+      subjectId: { $in: subjectIds }
     });
 
-    // 3. TOTAL ATTENDANCE DAYS (unique days across all subjects)
-    const uniqueAttendanceDaysSet = new Set();
+    // Create a map for quick lookup of attendance records
+    const attendanceMap = new Map();
     attendanceRecords.forEach(record => {
-      const dateKey = new Date(record.date).toISOString().split('T')[0];
-      uniqueAttendanceDaysSet.add(dateKey);
+      const key = `${record.subjectId.toString()}_${record.scheduleId.toString()}_${record.date.toISOString().split('T')[0]}_${record.rollNo}`;
+      attendanceMap.set(key, record);
     });
-    const totalAttendanceDays = uniqueAttendanceDaysSet.size;
 
-    // 4. ATTENDANCE PERCENTAGE - FIXED CALCULATION
-    let totalExpectedAttendances = 0;
-    let totalActualAttendances = 0;
+    // Calculate attendance statistics
+    let totalPresentCount = 0;
+    let totalExpectedCount = 0;
+    const uniqueAttendanceDaysSet = new Set();
 
-    // For each subject, calculate expected and actual attendances
+    // Process each subject
     for (const subject of subjects) {
-      const subjectAttendanceRecords = attendanceRecords.filter(
-        record => record.subjectId.toString() === subject._id.toString()
-      );
+      const registeredStudents = subject.registeredStudents || [];
+      
+      if (registeredStudents.length === 0) continue;
 
-      // Get unique dates for this subject (when attendance was taken)
-      const subjectUniqueDates = new Set();
-      subjectAttendanceRecords.forEach(record => {
-        const dateKey = new Date(record.date).toISOString().split('T')[0];
-        subjectUniqueDates.add(dateKey);
-      });
+      // For each schedule in the subject
+      for (const schedule of subject.classSchedule || []) {
+        // Get all attendance records for this subject and schedule
+        const scheduleAttendanceRecords = attendanceRecords.filter(
+          record => record.subjectId.toString() === subject._id.toString() &&
+                   record.scheduleId.toString() === schedule._id.toString()
+        );
 
-      // Number of registered students for this subject
-      const subjectStudentCount = subject.registeredStudents?.length || 0;
+        // Get unique dates for this schedule
+        const scheduleDates = new Set();
+        scheduleAttendanceRecords.forEach(record => {
+          const dateKey = record.date.toISOString().split('T')[0];
+          scheduleDates.add(dateKey);
+          uniqueAttendanceDaysSet.add(dateKey);
+        });
 
-      // For each date, we expect each registered student to be present
-      // So expected attendances = number of students × number of attendance days
-      const expectedForSubject = subjectStudentCount * subjectUniqueDates.size;
-      totalExpectedAttendances += expectedForSubject;
-
-      // Actual attendances is simply the number of attendance records
-      totalActualAttendances += subjectAttendanceRecords.length;
+        // For each date when attendance was marked for this schedule
+        for (const date of scheduleDates) {
+          // Count present students for this date and schedule
+          const presentStudents = scheduleAttendanceRecords.filter(
+            record => record.date.toISOString().split('T')[0] === date
+          );
+          
+          // Add to total present count
+          totalPresentCount += presentStudents.length;
+          
+          // Expected count is all registered students for this subject
+          totalExpectedCount += registeredStudents.length;
+        }
+      }
     }
 
-    // Calculate attendance percentage
+    // 3. TOTAL ATTENDANCE DAYS
+    const totalAttendanceDays = uniqueAttendanceDaysSet.size;
+
+    // 4. ATTENDANCE PERCENTAGE
     let attendancePercentage = 0;
-    if (totalExpectedAttendances > 0) {
-      attendancePercentage = Math.round((totalActualAttendances / totalExpectedAttendances) * 100);
-      
-      // Cap at 100% (though theoretically it shouldn't exceed 100%)
-      attendancePercentage = Math.min(attendancePercentage, 100);
+    if (totalExpectedCount > 0) {
+      attendancePercentage = Math.min(
+        Math.round((totalPresentCount / totalExpectedCount) * 100),
+        100
+      );
     }
 
     // Log for debugging
@@ -276,17 +294,9 @@ export const getTeacherStats = async (req, res) => {
       totalRegisteredStudents,
       totalAttendanceDays,
       attendancePercentage,
-      totalActualAttendances,
-      totalExpectedAttendances,
-      subjects: subjects.map(s => ({
-        subjectCode: s.subjectCode,
-        studentCount: s.registeredStudents?.length || 0,
-        attendanceDays: new Set(
-          attendanceRecords
-            .filter(r => r.subjectId.toString() === s._id.toString())
-            .map(r => new Date(r.date).toISOString().split('T')[0])
-        ).size
-      }))
+      totalPresentCount,
+      totalExpectedCount,
+      totalAttendanceRecords: attendanceRecords.length
     });
 
     res.status(200).json({
@@ -309,3 +319,4 @@ export const getTeacherStats = async (req, res) => {
     });
   }
 };
+
