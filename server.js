@@ -48,8 +48,9 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // ============= AI PROXY ENDPOINT =============
 app.post("/api/v1/ai/query", async (req, res) => {
   try {
-    const { query, userId, context } = req.body;
-    
+    // ✅ FIX: Extract 'email' from req.body
+    const { query, userId, email, context } = req.body;
+
     if (!query || typeof query !== 'string') {
       return res.status(400).json({
         success: false,
@@ -58,44 +59,46 @@ app.post("/api/v1/ai/query", async (req, res) => {
       });
     }
 
-    console.log('AI Query received:', { 
-      userId, 
+    console.log('AI Query received:', {
+      userId,
+      email,  // ✅ FIX: Log email too
       query: query.substring(0, 100),
-      hasContext: !!context 
+      hasContext: !!context
     });
-    
+
     // Forward the request to the external AI API
     const aiResponse = await fetch('https://attendance-management-system-ai-r0omtikmo.vercel.app/api/query', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        query: query
+      body: JSON.stringify({
+        query: query,
+        email: email || null,  // ✅ FIX: Forward email to AI service
+        userId: userId || null,
+        context: context || null
       }),
-      timeout: 15000 // 15 second timeout
+      timeout: 15000
     });
-    
+
     if (!aiResponse.ok) {
       console.error('AI service error:', aiResponse.status, aiResponse.statusText);
       throw new Error(`AI service responded with status: ${aiResponse.status}`);
     }
-    
+
     const data = await aiResponse.json();
-    
-    // Format the response for your frontend
+
     res.json({
       success: true,
       response: data.response || data.message || "I received your query successfully.",
       timestamp: new Date().toISOString()
     });
-    
+
   } catch (error) {
     console.error('AI Proxy Error:', error.message);
-    
-    // Provide helpful fallback responses
+
     let fallbackResponse = "I'm currently experiencing technical difficulties. ";
-    
+
     const query = req.body.query?.toLowerCase() || '';
     if (query.includes('attendance') && query.includes('add')) {
       fallbackResponse += "To add attendance, go to the Attendance page from the main menu, select a subject, and mark students.";
@@ -106,7 +109,7 @@ app.post("/api/v1/ai/query", async (req, res) => {
     } else {
       fallbackResponse += "Please try again in a moment or contact support.";
     }
-    
+
     res.status(200).json({
       success: false,
       response: fallbackResponse,
