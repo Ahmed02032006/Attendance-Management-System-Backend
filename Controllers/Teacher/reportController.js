@@ -95,13 +95,36 @@ export const getSubjectAttendanceReport = async (req, res) => {
       }
     }).sort({ date: 1, time: 1 });
 
-    // Generate all dates in the range
-    const allDatesInRange = [];
-    const currentDate = new Date(startDate);
-    
-    while (currentDate <= endDate) {
-      allDatesInRange.push(currentDate.toISOString().split('T')[0]);
-      currentDate.setDate(currentDate.getDate() + 1);
+    // Get all unique dates where attendance was actually marked (class was held)
+    const markedDates = [...new Set(
+      attendanceRecords.map(record => 
+        record.date.toISOString().split('T')[0]
+      )
+    )].sort();
+
+    // If no attendance records found
+    if (markedDates.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No attendance records found for the selected date range',
+        data: {
+          subjectDetails: {
+            id: subject._id,
+            title: subject.subjectTitle,
+            code: subject.subjectCode,
+            department: subject.departmentOffering,
+            semester: subject.semester,
+            session: subject.session
+          },
+          dateRange: {
+            fromDate: fromDate,
+            toDate: toDate
+          },
+          classSchedule: subject.classSchedule || [],
+          totalDays: 0,
+          students: []
+        }
+      });
     }
 
     // Get class schedules
@@ -127,11 +150,11 @@ export const getSubjectAttendanceReport = async (req, res) => {
 
     // Build the report data for each student
     const reportData = registeredStudents.map((student, index) => {
-      // Initialize attendance array for all dates and schedules
+      // Initialize attendance array for all marked dates only
       const attendanceByDate = [];
 
-      allDatesInRange.forEach(date => {
-        // For each date, check all class schedules
+      markedDates.forEach(date => {
+        // For each marked date, check all class schedules
         const schedulesForDate = classSchedules.map(schedule => {
           const scheduleId = schedule._id?.toString() || 'unknown';
           const key = `${student.registrationNo}_${date}_${scheduleId}`;
@@ -168,7 +191,7 @@ export const getSubjectAttendanceReport = async (req, res) => {
         });
       });
 
-      // Calculate present and absent counts based on schedules
+      // Calculate present and absent counts based on marked dates only
       let totalPresentCount = 0;
       let totalPossibleCount = 0;
       
@@ -194,7 +217,8 @@ export const getSubjectAttendanceReport = async (req, res) => {
         registrationNo: student.registrationNo,
         presentCount: totalPresentCount,
         absentCount: totalAbsentCount,
-        totalPossibleClasses: totalPossibleCount,
+        totalMarkedClasses: totalPossibleCount,
+        markedDays: markedDates.length,
         percentage: parseFloat(percentage),
         attendance: attendanceByDate
       };
@@ -205,12 +229,12 @@ export const getSubjectAttendanceReport = async (req, res) => {
       a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true })
     );
 
-    // Calculate total possible classes for the date range
-    const totalPossibleClasses = allDatesInRange.length * classSchedules.length;
+    // Calculate total possible classes for marked dates only
+    const totalPossibleClasses = markedDates.length * classSchedules.length;
 
     // Calculate summary statistics
     const totalStudents = reportData.length;
-    const totalDays = allDatesInRange.length;
+    const totalMarkedDays = markedDates.length;
     
     // Calculate total present count across all students
     const totalPresentAcrossAllStudents = reportData.reduce((sum, student) => sum + student.presentCount, 0);
@@ -220,12 +244,12 @@ export const getSubjectAttendanceReport = async (req, res) => {
 
     const summary = {
       totalStudents,
-      totalDays,
+      totalMarkedDays,
       totalSchedules: classSchedules.length,
       totalPossibleClasses,
       totalPresentClasses: totalPresentAcrossAllStudents,
       totalAbsentClasses: (totalStudents * totalPossibleClasses) - totalPresentAcrossAllStudents,
-      dates: allDatesInRange,
+      markedDates: markedDates,
       classSchedules: classSchedules.map(s => ({
         id: s._id,
         day: s.day,
