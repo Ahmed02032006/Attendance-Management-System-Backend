@@ -744,3 +744,316 @@ export const getSubjectById = async (req, res) => {
     });
   }
 };
+
+// Get subject overall details with attendance records
+export const getSubjectOverallDetails = async (req, res) => {
+  try {
+    const { subjectId } = req.params;
+
+    // Validate subjectId
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
+
+    // Fetch subject details with all fields
+    const subject = await Subject.findById(subjectId)
+      .populate('userId', 'userName userEmail'); // Populate teacher details
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found'
+      });
+    }
+
+    // Fetch all attendance records for this subject
+    const attendanceRecords = await Attendance.find({ subjectId })
+      .sort({ date: -1, time: -1 }); // Sort by date descending, then time descending
+
+    // Group attendance by date
+    const attendanceByDate = {};
+    attendanceRecords.forEach(record => {
+      const dateStr = record.date.toISOString().split('T')[0];
+      if (!attendanceByDate[dateStr]) {
+        attendanceByDate[dateStr] = {
+          date: record.date,
+          totalPresent: 0,
+          bySchedule: {}
+        };
+      }
+      
+      // Group by schedule within date
+      const scheduleId = record.scheduleId.toString();
+      if (!attendanceByDate[dateStr].bySchedule[scheduleId]) {
+        attendanceByDate[dateStr].bySchedule[scheduleId] = {
+          scheduleId: scheduleId,
+          students: []
+        };
+      }
+      
+      attendanceByDate[dateStr].bySchedule[scheduleId].students.push({
+        studentName: record.studentName,
+        rollNo: record.rollNo,
+        discipline: record.discipline,
+        time: record.time,
+        ipAddress: record.ipAddress
+      });
+      
+      attendanceByDate[dateStr].totalPresent++;
+    });
+
+    // Get all registered students for this subject
+    const registeredStudents = subject.registeredStudents || [];
+
+    // Calculate attendance statistics per student
+    const studentStats = registeredStudents.map(student => {
+      const studentAttendance = attendanceRecords.filter(
+        record => record.rollNo === student.registrationNo
+      );
+      
+      // Get attendance by schedule
+      const attendanceBySchedule = {};
+      subject.classSchedule.forEach(schedule => {
+        const scheduleAttendance = studentAttendance.filter(
+          record => record.scheduleId.toString() === schedule._id.toString()
+        );
+        attendanceBySchedule[schedule._id] = {
+          scheduleId: schedule._id,
+          day: schedule.day,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          totalClasses: scheduleAttendance.length,
+          attendanceDates: scheduleAttendance.map(record => ({
+            date: record.date,
+            time: record.time
+          }))
+        };
+      });
+
+      return {
+        studentId: student._id,
+        registrationNo: student.registrationNo,
+        studentName: student.studentName,
+        discipline: student.discipline,
+        totalAttendance: studentAttendance.length,
+        attendancePercentage: subject.classSchedule.length > 0 
+          ? ((studentAttendance.length / (attendanceRecords.length || 1)) * 100).toFixed(2)
+          : 0,
+        attendanceBySchedule
+      };
+    });
+
+    // Calculate overall statistics
+    const totalStudents = registeredStudents.length;
+    const totalAttendanceRecords = attendanceRecords.length;
+    const totalClasses = attendanceByDate ? Object.keys(attendanceByDate).length : 0;
+    
+    // Calculate average attendance per class
+    const averageAttendancePerClass = totalClasses > 0 
+      ? (totalAttendanceRecords / totalClasses).toFixed(2)
+      : 0;
+
+    // Get unique attendance dates
+    const uniqueDates = [...new Set(attendanceRecords.map(r => 
+      r.date.toISOString().split('T')[0]
+    ))];
+
+    // Prepare schedule-wise attendance summary
+    const scheduleSummary = subject.classSchedule.map(schedule => {
+      const scheduleAttendance = attendanceRecords.filter(
+        record => record.scheduleId.toString() === schedule._id.toString()
+      );
+      
+      const uniqueAttendanceDates = [...new Set(scheduleAttendance.map(r => 
+        r.date.toISOString().split('T')[0]
+      ))];
+
+      return {
+        scheduleId: schedule._id,
+        day: schedule.day,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        totalClasses: uniqueAttendanceDates.length,
+        totalAttendanceRecords: scheduleAttendance.length,
+        averageAttendancePerClass: uniqueAttendanceDates.length > 0
+          ? (scheduleAttendance.length / uniqueAttendanceDates.length).toFixed(2)
+          : 0
+      };
+    });
+
+    // Prepare the response data
+    const subjectDetails = {
+      // Basic subject info
+      id: subject._id,
+      title: subject.subjectTitle,
+      code: subject.subjectCode,
+      departmentOffering: subject.departmentOffering,
+      creditHours: subject.creditHours,
+      semester: subject.semester,
+      session: subject.session,
+      status: subject.status,
+      createdDate: subject.createdDate,
+      
+      // Teacher info
+      teacher: {
+        id: subject.userId?._id,
+        name: subject.userId?.userName || 'Unknown',
+        email: subject.userId?.userEmail || 'Unknown'
+      },
+      
+      // Schedule info
+      classSchedule: subject.classSchedule.map(schedule => ({
+        id: schedule._id,
+        day: schedule.day,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime
+      })),
+      
+      // Registered students
+      registeredStudents: {
+        total: totalStudents,
+        list: registeredStudents.map(student => ({
+          id: student._id,
+          registrationNo: student.registrationNo,
+          studentName: student.studentName,
+          discipline: student.discipline
+        }))
+      },
+      
+      // Attendance overview
+      attendanceOverview: {
+        totalAttendanceRecords,
+        totalClasses: uniqueDates.length,
+        averageAttendancePerClass,
+        totalStudents,
+        attendanceRate: totalStudents > 0 && totalClasses > 0
+          ? ((totalAttendanceRecords / (totalStudents * totalClasses)) * 100).toFixed(2)
+          : 0
+      },
+      
+      // Schedule-wise summary
+      scheduleSummary,
+      
+      // Detailed student statistics
+      studentStatistics: studentStats,
+      
+      // Attendance by date (detailed)
+      attendanceByDate: Object.values(attendanceByDate).map(dateGroup => ({
+        date: dateGroup.date,
+        totalPresent: dateGroup.totalPresent,
+        bySchedule: Object.values(dateGroup.bySchedule).map(schedule => ({
+          scheduleId: schedule.scheduleId,
+          studentCount: schedule.students.length,
+          students: schedule.students
+        }))
+      }))
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Subject overall details fetched successfully',
+      data: subjectDetails
+    });
+
+  } catch (error) {
+    console.error('Error fetching subject overall details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching subject overall details',
+      error: error.message
+    });
+  }
+};
+
+// Alternative simplified version - less detailed but faster
+export const getSubjectOverview = async (req, res) => {
+  try {
+    const { subjectId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid subject ID'
+      });
+    }
+
+    const subject = await Subject.findById(subjectId);
+    
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found'
+      });
+    }
+
+    // Get attendance counts
+    const attendanceStats = await Attendance.aggregate([
+      { $match: { subjectId: new mongoose.Types.ObjectId(subjectId) } },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+            scheduleId: "$scheduleId"
+          },
+          count: { $sum: 1 },
+          students: { $push: "$rollNo" }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.date",
+          schedules: {
+            $push: {
+              scheduleId: "$_id.scheduleId",
+              count: "$count",
+              students: "$students"
+            }
+          },
+          totalForDay: { $sum: "$count" }
+        }
+      },
+      { $sort: { "_id": -1 } }
+    ]);
+
+    // Basic stats
+    const totalStudents = subject.registeredStudents?.length || 0;
+    const totalAttendanceRecords = await Attendance.countDocuments({ subjectId });
+    const uniqueDates = await Attendance.distinct('date', { subjectId });
+
+    const overview = {
+      id: subject._id,
+      title: subject.subjectTitle,
+      code: subject.subjectCode,
+      departmentOffering: subject.departmentOffering,
+      creditHours: subject.creditHours,
+      semester: subject.semester,
+      session: subject.session,
+      status: subject.status,
+      
+      classSchedule: subject.classSchedule,
+      
+      registeredStudentsCount: totalStudents,
+      totalAttendanceRecords,
+      totalClasses: uniqueDates.length,
+      
+      attendanceStats
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Subject overview fetched successfully',
+      data: overview
+    });
+
+  } catch (error) {
+    console.error('Error fetching subject overview:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching subject overview',
+      error: error.message
+    });
+  }
+};
