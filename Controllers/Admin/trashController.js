@@ -97,10 +97,10 @@ export const moveToTrash = async (req, res) => {
         await trashEntry.save();
 
         // Delete original subject and its attendance
-        // await Subject.findByIdAndDelete(subjectId);
-        // if (attendanceRecords.length > 0) {
-        //     await Attendance.deleteMany({ subjectId });
-        // }
+        await Subject.findByIdAndDelete(subjectId);
+        if (attendanceRecords.length > 0) {
+            await Attendance.deleteMany({ subjectId });
+        }
 
         // Get user details for response
         const user = await User.findById(userId).select('userName userEmail userRole');
