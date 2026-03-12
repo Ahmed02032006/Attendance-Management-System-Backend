@@ -689,3 +689,63 @@ export const deleteAllRegisteredStudents = async (req, res) => {
     });
   }
 };
+
+export const getSubjectById = async (req, res) => {
+  try {
+    const { subjectId } = req.params;
+
+    // Validate subjectId
+    if (!mongoose.Types.ObjectId.isValid(subjectId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid course ID'
+      });
+    }
+
+    // Find the subject (only return necessary fields for students)
+    const subject = await Subject.findById(subjectId)
+      .select('subjectTitle subjectCode departmentOffering creditHours session semester status classSchedule');
+
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found'
+      });
+    }
+
+    // Check if subject is active
+    if (subject.status !== 'Active') {
+      return res.status(403).json({
+        success: false,
+        message: 'This course is currently inactive'
+      });
+    }
+
+    // Return formatted subject data
+    const subjectData = {
+      id: subject._id.toString(),
+      title: subject.subjectTitle,
+      code: subject.subjectCode,
+      departmentOffering: subject.departmentOffering,
+      creditHours: subject.creditHours,
+      session: subject.session,
+      semester: subject.semester,
+      status: subject.status,
+      classSchedule: subject.classSchedule || []
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Course details fetched successfully',
+      data: subjectData
+    });
+
+  } catch (error) {
+    console.error('Error fetching subject details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching course details',
+      error: error.message
+    });
+  }
+};

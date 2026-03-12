@@ -9,7 +9,8 @@ import {
   deleteRegisteredStudent,
   getRegisteredStudentsBySubject,
   updateRegisteredStudent,
-  deleteAllRegisteredStudents  // Make sure this is imported
+  deleteAllRegisteredStudents,
+  getSubjectById
 } from '../../Controllers/Teacher/subjectController.js';
 
 const Router = express.Router();
@@ -19,6 +20,7 @@ Router.route("/").post(createSubject);
 Router.route("/:id").put(updateSubject);
 Router.route("/:id").delete(deleteSubject);
 Router.route("/reset-attendance/:id").delete(resetSubject);
+Router.route("/specific/:subjectId").get(getSubjectById);
 
 Router.route("/:subjectId/registered-students").get(getRegisteredStudentsBySubject);
 Router.route("/:subjectId/registered-students").post(addRegisteredStudents);
