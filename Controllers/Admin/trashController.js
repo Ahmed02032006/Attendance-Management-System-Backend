@@ -68,9 +68,9 @@ export const moveToTrash = async (req, res) => {
             originalAttendanceId: record._id
         }));
 
-        // Set expiry date (30 days from now)
+        // Set expiry date (5 years from now)
         const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + 30);
+        expiryDate.setDate(expiryDate.getDate() + 1800);
 
         // Create trash entry
         const trashEntry = new Trash({
