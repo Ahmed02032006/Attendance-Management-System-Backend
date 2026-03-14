@@ -17,6 +17,7 @@ import teacherReportRouter from './Routes/Teacher/report-Routes.js';
 // =================================================
 import adminTeachersRouter from "./Routes/Admin/teachers-Routes.js";
 import adminTrashRouter from "./Routes/Admin/trash-Routes.js";
+import adminAuditLogRouter from "./Routes/Admin/auditLog-Routes.js";
 
 dotenv.config();
 const port = process.env.PORT || 5001;
@@ -130,6 +131,7 @@ app.use("/api/v1/teacher/reports", teacherReportRouter);
 // ============= ADMIN ROUTES =============
 app.use("/api/v1/admin/teachers", adminTeachersRouter);
 app.use("/api/v1/admin/trash", adminTrashRouter);
+app.use("/api/v1/admin/auditLog", adminAuditLogRouter);
 
 // Health check route
 app.get("/", (req, res) => {
