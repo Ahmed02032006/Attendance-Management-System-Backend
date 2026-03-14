@@ -131,7 +131,7 @@ app.use("/api/v1/teacher/reports", teacherReportRouter);
 // ============= ADMIN ROUTES =============
 app.use("/api/v1/admin/teachers", adminTeachersRouter);
 app.use("/api/v1/admin/trash", adminTrashRouter);
-app.use("/api/v1/admin/auditLog", adminAuditLogRouter);
+app.use("/api/v1/admin/audit", adminAuditLogRouter);
 
 // Health check route
 app.get("/", (req, res) => {

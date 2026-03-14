@@ -1,14 +1,12 @@
 import express from 'express';
 import {
-  getTeacherAuditLogs,
-  getAllAuditLogs,
-  getTeacherAuditSummary
+  createAuditLog,
+  getTeacherAuditLogs
 } from '../../Controllers/Admin/auditLogController.js';
 
 const router = express.Router();
 
-router.get('/logs', getAllAuditLogs);
+router.post('/logs', createAuditLog);
 router.get('/logs/teacher/:teacherId', getTeacherAuditLogs);
-router.get('/logs/teacher/:teacherId/summary', getTeacherAuditSummary);
 
 export default router;
