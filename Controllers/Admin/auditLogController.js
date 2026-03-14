@@ -93,3 +93,46 @@ export const getTeacherAuditLogs = async (req, res) => {
     });
   }
 };
+
+// Delete all audit logs for a specific teacher
+export const deleteAllTeacherAuditLogs = async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(teacherId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid teacher ID'
+      });
+    }
+
+    // Count how many logs will be deleted
+    const count = await AuditLog.countDocuments({ userId: teacherId });
+
+    if (count === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No audit logs found for this teacher'
+      });
+    }
+
+    // Delete all audit logs for this teacher
+    await AuditLog.deleteMany({ userId: teacherId });
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully deleted ${count} audit log${count > 1 ? 's' : ''} for teacher`,
+      data: {
+        deletedCount: count,
+        teacherId
+      }
+    });
+  } catch (error) {
+    console.error('Error deleting teacher audit logs:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error deleting teacher audit logs',
+      error: error.message
+    });
+  }
+};
