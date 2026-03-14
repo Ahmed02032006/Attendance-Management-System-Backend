@@ -6,6 +6,14 @@ const auditLogSchema = mongoose.Schema({
     ref: "User",
     required: true
   },
+  action: {
+    type: String,
+    required: true,
+    enum: [
+      "create", "edit", "delete", "register", "edit_schedule", 
+      "create_qr", "export_attendance", "generate_report", "export_report"
+    ]
+  },
   heading: {
     type: String,
     required: true

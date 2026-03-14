@@ -4,25 +4,29 @@ import mongoose from 'mongoose';
 // Create a new audit log
 export const createAuditLog = async (req, res) => {
   try {
-    const { userId, heading, status } = req.body;
+    const { userId, action, heading, status } = req.body;
 
     // Validate required fields
-    if (!userId || !heading) {
+    if (!userId || !action || !heading) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: userId and heading are required'
+        message: 'Missing required fields: userId, action, and heading are required'
       });
     }
 
     // Create new audit log
     const auditLog = new AuditLog({
       userId,
+      action,
       heading,
       status: status || 'success',
       timestamp: new Date()
     });
 
     const savedLog = await auditLog.save();
+
+    // Populate user details for response
+    await savedLog.populate('userId', 'userName userEmail userRole');
 
     res.status(201).json({
       success: true,
